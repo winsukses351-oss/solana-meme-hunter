@@ -15,10 +15,31 @@ export default function Home() {
   const [jupiterApiKey, setJupiterApiKey] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
   const [isWalletConnected, setIsWalletConnected] = useState(false);
-  const [realSolBalance, setRealSolBalance] = useState(0);
-  const [solPriceUSD, setSolPriceUSD] = useState(150);
+  const [realSolBalance, setRealSolBalance] = useState(0.1531); // Default / Loaded balance
+  const [solPriceUSD, setSolPriceUSD] = useState(0); // Real-time SOL price
 
-  // 3. IN-APP NOTIFICATION SYSTEM
+  // 3. FETCH REAL-TIME SOL PRICE FROM JUPITER API V2
+  useEffect(() => {
+    const fetchRealSolPrice = async () => {
+      try {
+        const res = await fetch('https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112');
+        const data = await res.json();
+        const currentPrice = data?.data?.So11111111111111111111111111111111111111112?.price;
+        
+        if (currentPrice) {
+          setSolPriceUSD(parseFloat(currentPrice));
+        }
+      } catch (err) {
+        console.log('Gagal update harga SOL real-time:', err);
+      }
+    };
+
+    fetchRealSolPrice();
+    const priceInterval = setInterval(fetchRealSolPrice, 5000); // Fetch tiap 5 detik
+    return () => clearInterval(priceInterval);
+  }, []);
+
+  // 4. IN-APP NOTIFICATION SYSTEM
   const [notifications, setNotifications] = useState([]);
 
   const triggerNotification = (title, message) => {
@@ -31,7 +52,7 @@ export default function Home() {
     }, 4000);
   };
 
-  // 4. CLEAN "TING!" SOUND SYNTHESIZER
+  // 5. CLEAN "TING!" SOUND SYNTHESIZER
   const playTingSound = () => {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -56,7 +77,7 @@ export default function Home() {
     }
   };
 
-  // 5. CAPITAL MANAGEMENT & PARAMETERS
+  // 6. CAPITAL MANAGEMENT & PARAMETERS
   const [balanceUSD, setBalanceUSD] = useState(10.0);
   const [initialCapital] = useState(10.0);
   const [equity, setEquity] = useState(10.0);
@@ -169,7 +190,7 @@ export default function Home() {
     if (window.solana) window.solana.disconnect();
     setWalletAddress('');
     setIsWalletConnected(false);
-    setRealSolBalance(0);
+    setRealSolBalance(0.1531);
     addSystemLog('🔌 [WALLET] Disconnected');
   };
 
@@ -277,23 +298,24 @@ export default function Home() {
     }
   };
 
-  // BUY EXECUTION
+  // BUY EXECUTION PRESISI REAL-TIME
   const executeAutoBuy = async (token) => {
-    if (tradeMode === 'live' && (!isWalletConnected || realSolBalance < 0.01)) {
+    if (tradeMode === 'live' && (!isWalletConnected || realSolBalance < 0.001)) {
       addSystemLog('⚠️ [LIVE ERROR] Wallet belum terhubung atau saldo SOL kurang!');
       return;
     }
 
-    const currentActiveBalance = tradeMode === 'live' ? (realSolBalance * solPriceUSD) : balanceUSD;
+    // Menggunakan saldo real-time aktual berbasis harga pasar SOL
+    const currentActiveBalanceUSD = tradeMode === 'live' ? (realSolBalance * solPriceUSD) : balanceUSD;
 
-    if (currentActiveBalance < 0.5 && tradeMode === 'demo') return;
+    if (currentActiveBalanceUSD <= 0) return;
 
     let sizePercent = riskPercent;
     if (enableCompound && compoundRate > 0) {
       sizePercent = Math.min(100, riskPercent * (1 + compoundRate / 100));
     }
 
-    const positionSize = parseFloat((currentActiveBalance * (sizePercent / 100)).toFixed(2));
+    const positionSize = parseFloat((currentActiveBalanceUSD * (sizePercent / 100)).toFixed(2));
     const { totalCost } = calculateCosts(positionSize);
 
     const newTrade = {
@@ -456,13 +478,23 @@ export default function Home() {
     a.click();
   };
 
+  // KALKULASI PRESISI SALDO & EQUITY REAL-TIME
   useEffect(() => {
-    const activePnL = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
-    const currentBase = tradeMode === 'live' ? (realSolBalance * solPriceUSD) : balanceUSD;
-    const currentEquity = currentBase + activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0) + activePnL;
-    const roundedEquity = parseFloat(currentEquity.toFixed(2));
-    setEquity(roundedEquity);
+    const activePositionsUSD = activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0);
+    const activePnLUSD = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
 
+    let baseBalanceUSD = 0;
+    if (tradeMode === 'live') {
+      const totalWalletUSD = realSolBalance * solPriceUSD;
+      baseBalanceUSD = Math.max(0, totalWalletUSD - activePositionsUSD);
+    } else {
+      baseBalanceUSD = balanceUSD;
+    }
+
+    const realEquityUSD = baseBalanceUSD + activePositionsUSD + activePnLUSD;
+    const roundedEquity = parseFloat(realEquityUSD.toFixed(2));
+
+    setEquity(roundedEquity);
     setEquityHistory((prev) => [...prev.slice(-19), roundedEquity]);
 
     const drawdown = ((initialCapital - roundedEquity) / initialCapital) * 100;
@@ -606,13 +638,21 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-emerald-400">SOLANA HUNTER AI</h1>
             <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] px-2 py-0.5 rounded-full font-bold">
-              v2.1 PRO ANALYTICS + SECURITY
+              v2.1 REAL-TIME ENGINE
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">Automated High-Frequency Solana DEX Trading Engine</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* BAR HARGA SOL REAL TIME */}
+          <div className="bg-slate-950 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-right">
+            <p className="text-[9px] text-slate-400 font-bold">SOL PRICE (REAL-TIME)</p>
+            <p className="text-xs font-bold text-emerald-400">
+              {solPriceUSD > 0 ? `$${solPriceUSD.toFixed(2)}` : 'Loading...'}
+            </p>
+          </div>
+
           {!isWalletConnected ? (
             <button
               onClick={connectWallet}
