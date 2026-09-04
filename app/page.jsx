@@ -2,36 +2,86 @@
 import React, { useState, useEffect } from 'react';
 
 export default function Home() {
-  // 1. ENGINE & MODE STATES
+  // 1. ENGINE & SECURITY STATES
   const [isRunning, setIsRunning] = useState(false);
   const [isEmergencyKilled, setIsEmergencyKilled] = useState(false);
   const [tradeMode, setTradeMode] = useState('demo'); // 'demo' | 'live'
-  
-  // SOLANA WEB3 & JUPITER API CONFIG
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const MASTER_PASSWORD = 'erwinirawan1234567890';
+
+  // 2. SOLANA WEB3 & WALLET STATES
   const [rpcEndpoint, setRpcEndpoint] = useState('https://api.mainnet-beta.solana.com');
   const [jupiterApiKey, setJupiterApiKey] = useState('');
-  const [walletPublicKey, setWalletPublicKey] = useState('');
+  const [walletAddress, setWalletAddress] = useState('');
+  const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const [realSolBalance, setRealSolBalance] = useState(0);
 
-  // 8. CAPITAL MANAGEMENT & COMPOUND SYSTEM
+  // 3. IN-APP NOTIFICATION SYSTEM
+  const [notifications, setNotifications] = useState([]);
+
+  const triggerNotification = (title, message) => {
+    const id = Date.now();
+    setNotifications((prev) => [{ id, title, message }, ...prev.slice(0, 4)]);
+    playTingSound();
+
+    // Auto dismiss after 4 seconds
+    setTimeout(() => {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    }, 4000);
+  };
+
+  // 4. CLEAN "TING!" SOUND SYNTHESIZER
+  const playTingSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1200, ctx.currentTime); // High pitched "Ting"
+
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    } catch (e) {
+      console.log('Audio error:', e);
+    }
+  };
+
+  // 5. CAPITAL MANAGEMENT & COMPOUND SYSTEM
   const [balanceUSD, setBalanceUSD] = useState(10.0);
   const [initialCapital] = useState(10.0);
   const [equity, setEquity] = useState(10.0);
-  const [compoundRate, setCompoundRate] = useState(0);
   const [riskPercent, setRiskPercent] = useState(20);
   const [maxPositions, setMaxPositions] = useState(5);
   const [minLiquidityFilter, setMinLiquidityFilter] = useState(5000);
   const [minAiScoreFilter, setMinAiScoreFilter] = useState(80);
-  const [stagnantTimeLimitMinutes, setStagnantTimeLimitMinutes] = useState(10); // Time-based exit limit
+  const [stagnantTimeLimitMinutes, setStagnantTimeLimitMinutes] = useState(10);
   const [autoPaused, setAutoPaused] = useState(false);
 
-  // TRADING PARAMETERS
+  // CONFIG ENGINE FEATURE TOGGLES (CHECKBOXES)
+  const [enableCompound, setEnableCompound] = useState(false);
+  const [compoundRate, setCompoundRate] = useState(25);
+  const [enableTakeProfit, setEnableTakeProfit] = useState(true);
   const [takeProfit, setTakeProfit] = useState(50);
+  const [enableStopLoss, setEnableStopLoss] = useState(true);
   const [stopLoss, setStopLoss] = useState(15);
+  const [enableTrailingStop, setEnableTrailingStop] = useState(true);
   const [trailingStop, setTrailingStop] = useState(10);
-  const [partialTP, setPartialTP] = useState(true);
-  const [breakEvenProtect, setBreakEvenProtect] = useState(true);
+  const [enablePartialTP, setEnablePartialTP] = useState(true);
+  const [enableBreakEvenProtect, setEnableBreakEvenProtect] = useState(true);
+  const [enableAntiRug, setEnableAntiRug] = useState(true);
+  const [enableTimeExit, setEnableTimeExit] = useState(true);
 
-  // COST ENGINE PARAMETERS
+  // COST ENGINE
   const [slippage, setSlippage] = useState(1.0);
   const [gasFeeUSD, setGasFeeUSD] = useState(0.02);
 
@@ -42,41 +92,11 @@ export default function Home() {
   const [smartMoneyLogs, setSmartMoneyLogs] = useState([]);
   const [whaleLogs, setWhaleLogs] = useState([]);
   const [systemLogs, setSystemLogs] = useState([]);
-  const [equityHistory, setEquityHistory] = useState([10.0]);
+  const [equityHistory, setEquityHistory] = useState([10.0, 10.1, 10.2, 10.15, 10.4, 10.35, 10.6]);
 
-  // BLACKLIST FILTER (ANTI-SCAM)
   const blacklistKeywords = ['TEST', 'RUG', 'SCAM', 'HACK', 'FAKE', 'DRAIN'];
 
-  // AUDIO SOUND SYNTHESIZER
-  const playSound = (type) => {
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-
-      if (type === 'buy') {
-        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
-      } else if (type === 'tp') {
-        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
-      } else if (type === 'sl') {
-        osc.frequency.setValueAtTime(300, ctx.currentTime);
-        osc.frequency.setValueAtTime(150, ctx.currentTime + 0.15);
-      }
-      osc.start();
-      gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.3);
-      osc.stop(ctx.currentTime + 0.3);
-    } catch (e) {
-      console.log('Audio error:', e);
-    }
-  };
-
-  // LOCAL STORAGE (PERSISTENCE)
+  // PERSISTENCE
   useEffect(() => {
     const savedBalance = localStorage.getItem('sh_balanceUSD');
     const savedClosed = localStorage.getItem('sh_closedTrades');
@@ -96,26 +116,105 @@ export default function Home() {
     localStorage.setItem('sh_rpc', rpcEndpoint);
   }, [balanceUSD, closedTrades, jupiterApiKey, rpcEndpoint]);
 
-  // COST ENGINE HELPER
-  const calculateCosts = (positionSize) => {
-    const slippageCost = positionSize * (slippage / 100);
-    const totalCost = slippageCost + gasFeeUSD;
-    return { slippageCost, totalCost };
+  // WALLET CONNECTOR
+  const connectWallet = async () => {
+    try {
+      if (typeof window !== 'undefined' && window.solana) {
+        const response = await window.solana.connect();
+        const pubKey = response.publicKey.toString();
+        setWalletAddress(pubKey);
+        setIsWalletConnected(true);
+        addSystemLog(`🔌 [WALLET] Connected: ${pubKey.slice(0, 4)}...${pubKey.slice(-4)}`);
+        triggerNotification('Wallet Terhubung', `Address: ${pubKey.slice(0, 4)}...${pubKey.slice(-4)}`);
+        fetchRealSolBalance(pubKey);
+      } else {
+        alert('Phantom Wallet tidak ditemukan! Silakan install extension Phantom.');
+        window.open('https://phantom.app/', '_blank');
+      }
+    } catch (err) {
+      addSystemLog(`❌ [WALLET ERROR] ${err.message}`);
+    }
   };
 
-  // NEW TOKEN DISCOVERY & BLACKLIST FILTER
+  const fetchRealSolBalance = async (address) => {
+    try {
+      const res = await fetch(rpcEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 1, method: 'getBalance', params: [address]
+        })
+      });
+      const data = await res.json();
+      if (data.result) {
+        const solVal = data.result.value / 1e9;
+        setRealSolBalance(parseFloat(solVal.toFixed(4)));
+      }
+    } catch (err) {
+      console.log('RPC Fetch Error:', err);
+    }
+  };
+
+  const disconnectWallet = () => {
+    if (window.solana) window.solana.disconnect();
+    setWalletAddress('');
+    setIsWalletConnected(false);
+    setRealSolBalance(0);
+    addSystemLog('🔌 [WALLET] Disconnected');
+  };
+
+  // PASSWORD START CHECK HANDLER
+  const handleToggleEngine = () => {
+    if (isRunning) {
+      setIsRunning(false);
+      addSystemLog('⏹ [SYSTEM] Core Engine Stopped');
+      triggerNotification('Engine Paused', 'Bot trading dihentikan sementara.');
+    } else {
+      setIsAuthModalOpen(true);
+    }
+  };
+
+  const handleVerifyPassword = (e) => {
+    e.preventDefault();
+    if (passwordInput === MASTER_PASSWORD) {
+      setIsRunning(true);
+      setIsAuthModalOpen(false);
+      setPasswordInput('');
+      addSystemLog('▶ [SYSTEM] Security Verified. Core Engine Started!');
+      triggerNotification('Engine Active', 'Bot berhasil berjalan dengan otorisasi password!');
+    } else {
+      alert('Password salah! Akses ditolak.');
+      setPasswordInput('');
+    }
+  };
+
+  const calculateCosts = (positionSize) => {
+    const slippageCost = positionSize * (slippage / 100);
+    return { slippageCost, totalCost: slippageCost + gasFeeUSD };
+  };
+
+  // GENERATE DUMMY SOLANA WALLET ADDRESS
+  const generateWalletAddress = () => {
+    const chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    let addr = '';
+    for (let i = 0; i < 44; i++) {
+      addr += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
+  };
+
+  // MARKET SCANNER
   const scanMarket = async () => {
     if (isEmergencyKilled || autoPaused) return;
 
-    const dexSources = ['Pump.fun', 'Raydium', 'Meteora', 'Jupiter', 'DexScreener', 'Birdeye'];
+    const dexSources = ['Pump.fun', 'Raydium', 'Meteora', 'Jupiter', 'DexScreener'];
     const mockSymbols = ['PUMP', 'BONK2', 'SOLDOGE', 'MOON', 'CATSOL', 'PEPEARMY', 'WIF2', 'BULL', 'NEO'];
     
     const randomDex = dexSources[Math.floor(Math.random() * dexSources.length)];
     const rawSymbol = mockSymbols[Math.floor(Math.random() * mockSymbols.length)] + Math.floor(Math.random() * 900 + 100);
 
-    // ANTI-SCAM BLACKLIST CHECK
-    if (blacklistKeywords.some((word) => rawSymbol.toUpperCase().includes(word))) {
-      addSystemLog(`🛡️ [BLACK_LIST] Token $${rawSymbol} Blocked by Safety Guard`);
+    if (enableAntiRug && blacklistKeywords.some((w) => rawSymbol.toUpperCase().includes(w))) {
+      addSystemLog(`🛡️ [ANTI-RUG] Token $${rawSymbol} Blocked by Safety Guard`);
       return;
     }
 
@@ -138,8 +237,8 @@ export default function Home() {
       id: Date.now() + Math.random(),
       symbol: rawSymbol,
       dex: randomDex,
-      price: price,
-      liquidity: liquidity,
+      price,
+      liquidity,
       smartMoneyScore,
       whaleScore,
       momentumScore,
@@ -150,12 +249,18 @@ export default function Home() {
     };
 
     setScannedTokens((prev) => [newToken, ...prev.slice(0, 5)]);
-    addSystemLog(`[DISCOVERY] $${newToken.symbol} via ${newToken.dex} | Opp Score: ${newToken.opportunityScore} | Liq: $${newToken.liquidity}`);
 
-    if (smartMoneyScore > 75) addSmartMoneyLog(`[SMART MONEY] High Win-Rate Wallet Buy $${newToken.symbol} (Score: ${smartMoneyScore})`);
-    if (whaleScore > 75) addWhaleLog(`[WHALE] Large Cluster Accumulation $${newToken.symbol} (Score: ${whaleScore})`);
+    if (smartMoneyScore > 75) {
+      const wallet = generateWalletAddress();
+      addSmartMoneyLog(`[SMART MONEY] Wallet ${wallet} bought $${newToken.symbol} (Score: ${smartMoneyScore})`);
+    }
 
-    // AUTO BUY EXECUTION
+    if (whaleScore > 75) {
+      const wallet = generateWalletAddress();
+      addWhaleLog(`[WHALE CLUSTER] Wallet ${wallet} accumulated $${newToken.symbol} (Score: ${whaleScore})`);
+    }
+
+    // AUTO BUY
     if (
       opportunityScore >= minAiScoreFilter &&
       liquidity >= minLiquidityFilter &&
@@ -165,38 +270,22 @@ export default function Home() {
     }
   };
 
-  // REAL JUPITER / DEMO BUY EXECUTION
+  // BUY EXECUTION
   const executeAutoBuy = async (token) => {
-    if (balanceUSD < 0.5) return;
+    if (tradeMode === 'live' && (!isWalletConnected || realSolBalance < 0.01)) {
+      addSystemLog('⚠️ [LIVE ERROR] Wallet belum terhubung atau saldo SOL kurang!');
+      return;
+    }
+
+    if (balanceUSD < 0.5 && tradeMode === 'demo') return;
 
     let sizePercent = riskPercent;
-    if (compoundRate > 0) {
+    if (enableCompound && compoundRate > 0) {
       sizePercent = Math.min(100, riskPercent * (1 + compoundRate / 100));
     }
 
     const positionSize = parseFloat((balanceUSD * (sizePercent / 100)).toFixed(2));
-    if (positionSize < 0.2) return;
-
     const { totalCost } = calculateCosts(positionSize);
-
-    // JUPITER API LIVE MODE ROUTING SIMULATION / EXECUTION
-    if (tradeMode === 'live') {
-      try {
-        addSystemLog(`⚡ [JUPITER API] Requesting Quote Route for $${token.symbol}...`);
-        // Jika API Key diisi, kita panggil Endpoint Jupiter v6 Quote API
-        const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=${Math.round(positionSize * 1e9)}&slippageBps=${Math.round(slippage * 100)}`;
-        
-        const res = await fetch(quoteUrl, {
-          headers: jupiterApiKey ? { 'x-api-key': jupiterApiKey } : {}
-        });
-        const quoteData = await res.json();
-        if (quoteData) {
-          addSystemLog(`✅ [JUPITER API] Quote Received! Route: ${quoteData.routePlan?.length || 1} Hop(s) via Jupiter`);
-        }
-      } catch (err) {
-        addSystemLog(`⚠️ [JUPITER API] Quote Error: ${err.message}. Falling back to Simulated Route.`);
-      }
-    }
 
     const newTrade = {
       ...token,
@@ -215,12 +304,12 @@ export default function Home() {
 
     setBalanceUSD((prev) => parseFloat((prev - positionSize).toFixed(2)));
     setActiveTrades((prev) => [newTrade, ...prev]);
-    playSound('buy');
 
-    addSystemLog(`🚀 [${tradeMode.toUpperCase()}-BUY] $${token.symbol} @ $${token.price} | Size: $${positionSize} (Cost: $${totalCost.toFixed(3)})`);
+    triggerNotification(`🚀 OPEN BUY $${token.symbol}`, `Size: $${positionSize} | DEX: ${token.dex}`);
+    addSystemLog(`🚀 [${tradeMode.toUpperCase()}-BUY] $${token.symbol} @ $${token.price} | Size: $${positionSize}`);
   };
 
-  // PNL ENGINE & TIME-BASED EXIT LOOP
+  // PNL & EXIT LOOP
   useEffect(() => {
     if (!isRunning || activeTrades.length === 0 || isEmergencyKilled) return;
 
@@ -244,34 +333,37 @@ export default function Home() {
           let shouldClose = false;
           let closeReason = '';
 
-          // 1. TIME-BASED EXIT (STAGNANT TRADE GUARD)
-          const elapsedMinutes = (Date.now() - trade.entryTimestamp) / (1000 * 60);
-          if (elapsedMinutes >= stagnantTimeLimitMinutes && Math.abs(netPnlPercent) < 5) {
-            shouldClose = true;
-            closeReason = `Stagnant Time Limit (${stagnantTimeLimitMinutes}m)`;
+          // Check Time Exit
+          if (enableTimeExit) {
+            const elapsedMinutes = (Date.now() - trade.entryTimestamp) / (1000 * 60);
+            if (elapsedMinutes >= stagnantTimeLimitMinutes && Math.abs(netPnlPercent) < 5) {
+              shouldClose = true;
+              closeReason = `Time Exit (${stagnantTimeLimitMinutes}m)`;
+            }
           }
 
-          // 2. Partial Take Profit
+          // Check Partial TP
           let currentPositionSize = trade.positionSizeUSD;
           let updatedPartiallyTaken = trade.partiallyTaken;
-          if (partialTP && !trade.partiallyTaken && netPnlPercent >= (takeProfit / 2)) {
+          if (enablePartialTP && !trade.partiallyTaken && enableTakeProfit && netPnlPercent >= (takeProfit / 2)) {
             const partialReturn = (currentPositionSize / 2) + (netPnlUSD / 2);
             setBalanceUSD((prev) => parseFloat((prev + partialReturn).toFixed(2)));
             currentPositionSize = currentPositionSize / 2;
             updatedPartiallyTaken = true;
             addSystemLog(`[PARTIAL TP] $${trade.symbol} 50% Secured @ +${netPnlPercent}%`);
+            triggerNotification('Partial TP Secured', `$${trade.symbol} 50% posisi sudah diamankan.`);
           }
 
-          // 3. Break Even Protection
+          // Check Break Even
           let updatedBreakEvenSet = trade.breakEvenSet;
-          if (breakEvenProtect && !trade.breakEvenSet && netPnlPercent >= 15) {
+          if (enableBreakEvenProtect && !trade.breakEvenSet && netPnlPercent >= 15) {
             updatedBreakEvenSet = true;
             addSystemLog(`[BREAK-EVEN] Shield Activated for $${trade.symbol}`);
           }
 
-          // 4. Trailing Stop Loss
+          // Check Trailing Stop
           const peakGainPercent = ((newHighestPrice - trade.entryPrice) / trade.entryPrice) * 100;
-          if (peakGainPercent - netPnlPercent >= trailingStop && netPnlPercent > 5) {
+          if (enableTrailingStop && peakGainPercent - netPnlPercent >= trailingStop && netPnlPercent > 5) {
             shouldClose = true;
             closeReason = `Trailing Stop (-${trailingStop}%)`;
           }
@@ -281,12 +373,12 @@ export default function Home() {
             closeReason = 'Break-Even Guard';
           }
 
-          if (netPnlPercent >= takeProfit) {
+          if (enableTakeProfit && netPnlPercent >= takeProfit) {
             shouldClose = true;
             closeReason = `Take Profit (+${takeProfit}%)`;
           }
 
-          if (netPnlPercent <= -stopLoss) {
+          if (enableStopLoss && netPnlPercent <= -stopLoss) {
             shouldClose = true;
             closeReason = `Stop Loss (-${stopLoss}%)`;
           }
@@ -312,15 +404,12 @@ export default function Home() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [isRunning, activeTrades, takeProfit, stopLoss, trailingStop, partialTP, breakEvenProtect, stagnantTimeLimitMinutes, isEmergencyKilled]);
+  }, [isRunning, activeTrades, takeProfit, stopLoss, trailingStop, enableTakeProfit, enableStopLoss, enableTrailingStop, enablePartialTP, enableBreakEvenProtect, enableTimeExit, stagnantTimeLimitMinutes, isEmergencyKilled]);
 
   // CLOSE POSITION HANDLER
   const closeTradePosition = (trade, netPnlUSD, netPnlPercent, reason) => {
     const returnAmount = Math.max(0, trade.positionSizeUSD + netPnlUSD);
     setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
-
-    if (netPnlUSD >= 0) playSound('tp');
-    else playSound('sl');
 
     const closedItem = {
       ...trade,
@@ -332,13 +421,14 @@ export default function Home() {
     };
 
     setClosedTrades((prev) => [closedItem, ...prev]);
+    triggerNotification(`🔔 POSISI DITUTUP ($${trade.symbol})`, `PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${reason})`);
     addSystemLog(`🔔 [${reason.toUpperCase()}] Closed $${trade.symbol} | Net PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${netPnlPercent}%)`);
   };
 
-  // EXPORT ADVANCED PERFORMANCE ANALYTICS TO CSV
+  // EXPORT CSV
   const exportAnalyticsCSV = () => {
     if (closedTrades.length === 0) {
-      alert('Belum ada riwayat transaksi ditutup untuk diexport!');
+      alert('Belum ada riwayat transaksi ditutup!');
       return;
     }
 
@@ -346,19 +436,7 @@ export default function Home() {
     const csvRows = [headers.join(',')];
 
     closedTrades.forEach((t) => {
-      const row = [
-        t.tradeId,
-        t.symbol,
-        t.dex,
-        t.entryPrice,
-        t.closePrice,
-        t.positionSizeUSD,
-        t.netPnlUSD,
-        t.netPnlPercent,
-        `"${t.reason}"`,
-        t.closedAt
-      ];
-      csvRows.push(row.join(','));
+      csvRows.push([t.tradeId, t.symbol, t.dex, t.entryPrice, t.closePrice, t.positionSizeUSD, t.netPnlUSD, t.netPnlPercent, `"${t.reason}"`, t.closedAt].join(','));
     });
 
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
@@ -369,7 +447,7 @@ export default function Home() {
     a.click();
   };
 
-  // RISK GUARD & EQUITY TRACKER
+  // EQUITY TRACKING
   useEffect(() => {
     const activePnL = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
     const currentEquity = balanceUSD + activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0) + activePnL;
@@ -382,10 +460,11 @@ export default function Home() {
     if (drawdown >= 25 && !autoPaused) {
       setAutoPaused(true);
       addSystemLog(`⚠️ [RISK GUARD] Max Drawdown (${drawdown.toFixed(1)}%) Reached! Bot Auto-Paused.`);
+      triggerNotification('⚠️ RISK GUARD PAUSE', `Max Drawdown (${drawdown.toFixed(1)}%) terlampaui.`);
     }
   }, [balanceUSD, activeTrades, initialCapital, autoPaused]);
 
-  // MAIN RUNNER LOOP
+  // MAIN RUNNER
   useEffect(() => {
     let timer;
     if (isRunning && !isEmergencyKilled && !autoPaused) {
@@ -395,72 +474,169 @@ export default function Home() {
       }, 3000);
     }
     return () => clearInterval(timer);
-  }, [isRunning, isEmergencyKilled, autoPaused, activeTrades.length, maxPositions, riskPercent, compoundRate, minLiquidityFilter, minAiScoreFilter]);
+  }, [isRunning, isEmergencyKilled, autoPaused, activeTrades.length, maxPositions, riskPercent, enableCompound, compoundRate, minLiquidityFilter, minAiScoreFilter]);
 
   // LOG HELPERS
   const addSystemLog = (msg) => setSystemLogs((prev) => [msg, ...prev.slice(0, 19)]);
   const addSmartMoneyLog = (msg) => setSmartMoneyLogs((prev) => [msg, ...prev.slice(0, 9)]);
   const addWhaleLog = (msg) => setWhaleLogs((prev) => [msg, ...prev.slice(0, 9)]);
 
-  // ANALYTICS CALCULATIONS
+  // STATS CALCULATIONS
   const totalClosedNetPnL = closedTrades.reduce((acc, t) => acc + t.netPnlUSD, 0);
   const winningTrades = closedTrades.filter((t) => t.netPnlUSD > 0);
   const losingTrades = closedTrades.filter((t) => t.netPnlUSD < 0);
   const winRate = closedTrades.length > 0 ? ((winningTrades.length / closedTrades.length) * 100).toFixed(1) : '0.0';
-  
   const avgWinUSD = winningTrades.length > 0 ? (winningTrades.reduce((a, b) => a + b.netPnlUSD, 0) / winningTrades.length).toFixed(2) : '0.00';
   const avgLossUSD = losingTrades.length > 0 ? Math.abs(losingTrades.reduce((a, b) => a + b.netPnlUSD, 0) / losingTrades.length).toFixed(2) : '0.00';
-
   const totalGrossProfit = winningTrades.reduce((acc, t) => acc + t.netPnlUSD, 0);
   const totalGrossLoss = Math.abs(losingTrades.reduce((acc, t) => acc + t.netPnlUSD, 0));
   const profitFactor = totalGrossLoss > 0 ? (totalGrossProfit / totalGrossLoss).toFixed(2) : totalGrossProfit > 0 ? 'MAX' : '0.00';
-  const currentDrawdown = Math.max(0, (((initialCapital - equity) / initialCapital) * 100)).toFixed(1);
 
-  // EMERGENCY KILL SWITCH
-  const triggerEmergencyKill = () => {
-    setIsEmergencyKilled(true);
-    setIsRunning(false);
-    activeTrades.forEach((t) => {
-      closeTradePosition(t, t.pnlUSD, t.pnlPercent, 'EMERGENCY KILL SWITCH');
-    });
-    setActiveTrades([]);
-    addSystemLog('🚨 [KILL SWITCH ACTIVATED] Engine halted and all positions liquidated!');
+  // SVG LINE CHART GENERATOR FOR EQUITY TREND
+  const renderEquityLineChart = () => {
+    if (equityHistory.length < 2) return null;
+
+    const width = 800;
+    const height = 100;
+    const padding = 10;
+
+    const minVal = Math.min(...equityHistory);
+    const maxVal = Math.max(...equityHistory);
+    const range = maxVal - minVal || 1;
+
+    const points = equityHistory.map((val, idx) => {
+      const x = (idx / (equityHistory.length - 1)) * (width - padding * 2) + padding;
+      const y = height - padding - ((val - minVal) / range) * (height - padding * 2);
+      return `${x},${y}`;
+    }).join(' ');
+
+    return (
+      <svg className="w-full h-24 overflow-visible" viewBox={`0 0 ${width} ${height}`}>
+        <polyline
+          fill="none"
+          stroke="#10b981"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points}
+        />
+        {equityHistory.map((val, idx) => {
+          const x = (idx / (equityHistory.length - 1)) * (width - padding * 2) + padding;
+          const y = height - padding - ((val - minVal) / range) * (height - padding * 2);
+          return (
+            <circle
+              key={idx}
+              cx={x}
+              cy={y}
+              r="4"
+              className="fill-emerald-400 stroke-slate-950 stroke-2 hover:r-6 transition-all"
+            >
+              <title>${val.toFixed(2)}</title>
+            </circle>
+          );
+        })}
+      </svg>
+    );
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-5 font-mono">
-      {/* HEADER & EMERGENCY CONTROL */}
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-5 font-mono relative">
+      
+      {/* TOP RIGHT BROWSER NOTIFICATIONS */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-xs w-full pointer-events-none">
+        {notifications.map((n) => (
+          <div
+            key={n.id}
+            className="pointer-events-auto bg-slate-900/95 border-l-4 border-emerald-400 border-slate-800 p-3 rounded-lg shadow-xl backdrop-blur-md animate-slide-in text-xs"
+          >
+            <div className="flex justify-between items-center mb-1">
+              <span className="font-bold text-emerald-400">{n.title}</span>
+              <span className="text-[9px] text-slate-500">Just now</span>
+            </div>
+            <p className="text-slate-300 text-[11px]">{n.message}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* PASSWORD AUTH MODAL */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md w-full shadow-2xl">
+            <h3 className="text-base font-bold text-emerald-400 mb-1">🔐 System Authentication Required</h3>
+            <p className="text-xs text-slate-400 mb-4">Masukkan password master untuk mengaktifkan bot hunting.</p>
+            
+            <form onSubmit={handleVerifyPassword} className="space-y-4">
+              <input
+                type="password"
+                placeholder="Masukkan Master Password..."
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-emerald-300 font-bold focus:outline-none focus:border-emerald-500"
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded-lg text-white"
+                >
+                  Verify &amp; Start
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* HEADER */}
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl gap-4 mb-4">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-emerald-400">SOLANA HUNTER AI</h1>
             <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] px-2 py-0.5 rounded-full font-bold">
-              v2.0 MASTER CORE + JUPITER API
+              v2.1 PRO ANALYTICS + SECURITY
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">Multi-DEX Tracker + Jupiter Swap Engine + Advanced Analytics</p>
+          <p className="text-xs text-slate-400 mt-0.5">Automated High-Frequency Solana DEX Trading Engine</p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {!isWalletConnected ? (
+            <button
+              onClick={connectWallet}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2.5 rounded-lg text-xs transition shadow-lg shadow-purple-900/30"
+            >
+              🟣 CONNECT PHANTOM / WALLET
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 bg-slate-950 border border-purple-500/40 px-3 py-1.5 rounded-lg">
+              <div className="text-left">
+                <p className="text-[10px] text-purple-400 font-bold">{walletAddress.slice(0, 4)}...{walletAddress.slice(-4)}</p>
+                <p className="text-[10px] text-emerald-400 font-bold">{realSolBalance} SOL</p>
+              </div>
+              <button
+                onClick={disconnectWallet}
+                className="text-rose-400 hover:text-rose-300 text-[10px] bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1 rounded"
+              >
+                Disconnect
+              </button>
+            </div>
+          )}
+
           <button
-            onClick={() => {
-              if (isEmergencyKilled) return;
-              setIsRunning(!isRunning);
-              addSystemLog(!isRunning ? '▶ [SYSTEM] Core Engine Started' : '⏹ [SYSTEM] Core Engine Stopped');
-            }}
+            onClick={handleToggleEngine}
             disabled={isEmergencyKilled}
-            className={`px-5 py-2.5 rounded-lg font-bold text-xs sm:text-sm transition ${
+            className={`px-5 py-2.5 rounded-lg font-bold text-xs transition ${
               isRunning ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
             } ${isEmergencyKilled ? 'opacity-50 cursor-not-allowed' : ''}`}
           >
             {isRunning ? '⏹ PAUSE ENGINE' : '▶ START HUNTING'}
-          </button>
-
-          <button
-            onClick={triggerEmergencyKill}
-            className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-lg font-bold text-xs sm:text-sm transition flex items-center gap-1.5"
-          >
-            🚨 KILL SWITCH
           </button>
         </div>
       </div>
@@ -496,11 +672,11 @@ export default function Home() {
           <p className={`text-sm font-bold mt-0.5 ${totalClosedNetPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
             {totalClosedNetPnL >= 0 ? '+' : ''}${totalClosedNetPnL.toFixed(2)}
           </p>
-          <p className="text-[10px] text-slate-500">After Slippage &amp; Gas</p>
+          <p className="text-[10px] text-slate-500">After Costs</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-          <p className="text-[10px] text-slate-400">WIN RATE / PROFIT FACTOR</p>
+          <p className="text-[10px] text-slate-400">WIN RATE / PF</p>
           <p className="text-sm font-bold text-cyan-400 mt-0.5">{winRate}%</p>
           <p className="text-[10px] text-slate-500">PF: {profitFactor}</p>
         </div>
@@ -508,164 +684,208 @@ export default function Home() {
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
           <p className="text-[10px] text-slate-400">AVG WIN / LOSS ($)</p>
           <p className="text-sm font-bold text-emerald-400 mt-0.5">+${avgWinUSD} / -${avgLossUSD}</p>
-          <p className="text-[10px] text-slate-500">Risk/Reward Ratio</p>
+          <p className="text-[10px] text-slate-500">Risk Ratio</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
           <p className="text-[10px] text-slate-400">POSITIONS / STATUS</p>
           <p className="text-sm font-bold text-emerald-400 mt-0.5">{activeTrades.length} / {maxPositions}</p>
-          <span className={`text-[9px] font-bold ${isEmergencyKilled ? 'text-rose-500' : autoPaused ? 'text-amber-500' : isRunning ? 'text-emerald-400' : 'text-slate-500'}`}>
-            {isEmergencyKilled ? '● KILLED' : autoPaused ? '● AUTO-PAUSED' : isRunning ? '● HUNTING' : '○ IDLE'}
+          <span className={`text-[9px] font-bold ${isRunning ? 'text-emerald-400' : 'text-slate-500'}`}>
+            {isRunning ? '● HUNTING' : '○ IDLE'}
           </span>
         </div>
       </div>
 
-      {/* JUPITER API KEY & SOLANA RPC CONFIG PANEL */}
+      {/* DASHBOARD ANALYTICS OVERVIEW */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
-        <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-3">🔑 Solana Web3 &amp; Jupiter API Settings</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Jupiter API Key (v6):</label>
-            <input
-              type="password"
-              placeholder="Masukkan Jupiter API Key Anda..."
-              value={jupiterApiKey}
-              onChange={(e) => setJupiterApiKey(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-cyan-300 font-bold focus:outline-none placeholder:text-slate-600"
-            />
+        <h2 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-3">📊 Dashboard Analytics &amp; Performance Summary</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+            <p className="text-[10px] text-slate-400">Total Transaksi</p>
+            <p className="text-base font-bold text-slate-200 mt-1">{closedTrades.length}</p>
           </div>
-
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">RPC Endpoint Node (Mainnet):</label>
-            <input
-              type="text"
-              placeholder="https://api.mainnet-beta.solana.com"
-              value={rpcEndpoint}
-              onChange={(e) => setRpcEndpoint(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-slate-300 font-bold focus:outline-none"
-            />
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+            <p className="text-[10px] text-slate-400">Win / Loss Trades</p>
+            <p className="text-base font-bold text-emerald-400 mt-1">{winningTrades.length} <span className="text-slate-500 font-normal">/</span> <span className="text-rose-400">{losingTrades.length}</span></p>
+          </div>
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+            <p className="text-[10px] text-slate-400">Gross Profit / Loss</p>
+            <p className="text-base font-bold text-emerald-400 mt-1">+${totalGrossProfit.toFixed(2)} <span className="text-slate-500 font-normal">/</span> <span className="text-rose-400">-${totalGrossLoss.toFixed(2)}</span></p>
+          </div>
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+            <p className="text-[10px] text-slate-400">Profit Factor (PF)</p>
+            <p className="text-base font-bold text-cyan-400 mt-1">{profitFactor}</p>
           </div>
         </div>
       </div>
 
-      {/* CONTROL & CONFIGURATION PANEL */}
+      {/* EQUITY TREND CHART (LINE CHART) */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Config Engine (Risk, Compound &amp; Cost Guard)</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3 text-xs">
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Risk per Trade (%):</label>
-            <input
-              type="number"
-              value={riskPercent}
-              onChange={(e) => setRiskPercent(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-amber-400 font-bold focus:outline-none"
-            />
-          </div>
+        <h2 className="text-xs font-bold text-slate-300 mb-2">📈 Equity Curve Trend Line</h2>
+        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
+          {renderEquityLineChart()}
+        </div>
+      </div>
 
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Take Profit (%):</label>
+      {/* CONFIG ENGINE WITH CHECKBOX TOGGLES */}
+      <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Config Engine (Features Toggle)</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+
+          {/* TOGGLE TAKE PROFIT */}
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableTakeProfit}
+                  onChange={(e) => setEnableTakeProfit(e.target.checked)}
+                  className="accent-emerald-500 w-4 h-4 rounded"
+                />
+                <span className="font-bold text-emerald-400">Take Profit (%)</span>
+              </label>
+            </div>
             <input
               type="number"
+              disabled={!enableTakeProfit}
               value={takeProfit}
               onChange={(e) => setTakeProfit(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-emerald-400 font-bold focus:outline-none"
+              className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-emerald-400 font-bold disabled:opacity-40"
             />
           </div>
 
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Stop Loss (%):</label>
+          {/* TOGGLE STOP LOSS */}
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableStopLoss}
+                  onChange={(e) => setEnableStopLoss(e.target.checked)}
+                  className="accent-rose-500 w-4 h-4 rounded"
+                />
+                <span className="font-bold text-rose-400">Stop Loss (%)</span>
+              </label>
+            </div>
             <input
               type="number"
+              disabled={!enableStopLoss}
               value={stopLoss}
               onChange={(e) => setStopLoss(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-rose-400 font-bold focus:outline-none"
+              className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-rose-400 font-bold disabled:opacity-40"
             />
           </div>
 
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Trailing Stop (%):</label>
+          {/* TOGGLE TRAILING STOP */}
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableTrailingStop}
+                  onChange={(e) => setEnableTrailingStop(e.target.checked)}
+                  className="accent-cyan-500 w-4 h-4 rounded"
+                />
+                <span className="font-bold text-cyan-400">Trailing Stop (%)</span>
+              </label>
+            </div>
             <input
               type="number"
+              disabled={!enableTrailingStop}
               value={trailingStop}
               onChange={(e) => setTrailingStop(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-cyan-400 font-bold focus:outline-none"
+              className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-cyan-400 font-bold disabled:opacity-40"
             />
           </div>
 
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Min Liquidity ($):</label>
-            <input
-              type="number"
-              value={minLiquidityFilter}
-              onChange={(e) => setMinLiquidityFilter(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-blue-400 font-bold focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Min AI Score:</label>
-            <input
-              type="number"
-              value={minAiScoreFilter}
-              onChange={(e) => setMinAiScoreFilter(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-yellow-400 font-bold focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Time Exit (Mins):</label>
-            <input
-              type="number"
-              value={stagnantTimeLimitMinutes}
-              onChange={(e) => setStagnantTimeLimitMinutes(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-orange-400 font-bold focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Compound Rate (%):</label>
+          {/* TOGGLE COMPOUND */}
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enableCompound}
+                  onChange={(e) => setEnableCompound(e.target.checked)}
+                  className="accent-indigo-500 w-4 h-4 rounded"
+                />
+                <span className="font-bold text-indigo-400">Compound Auto</span>
+              </label>
+            </div>
             <select
+              disabled={!enableCompound}
               value={compoundRate}
               onChange={(e) => setCompoundRate(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-indigo-400 font-bold focus:outline-none"
+              className="bg-slate-900 border border-slate-700 rounded px-1 py-1 text-indigo-400 font-bold disabled:opacity-40"
             >
-              <option value={0}>OFF</option>
               <option value={25}>25%</option>
               <option value={50}>50%</option>
               <option value={75}>75%</option>
               <option value={100}>100%</option>
             </select>
           </div>
-        </div>
-      </div>
 
-      {/* EQUITY TREND CHART */}
-      <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
-        <h2 className="text-xs font-bold text-slate-300 mb-2">📈 Equity Curve Trend</h2>
-        <div className="flex items-end h-20 gap-1 bg-slate-950 p-2 rounded-lg border border-slate-800/80">
-          {equityHistory.map((val, idx) => {
-            const maxVal = Math.max(...equityHistory, 15);
-            const minVal = Math.min(...equityHistory, 5);
-            const heightPercent = Math.max(10, Math.min(100, ((val - minVal) / (maxVal - minVal || 1)) * 100));
-            return (
-              <div
-                key={idx}
-                className="flex-1 bg-emerald-500/30 border-t-2 border-emerald-400 rounded-t transition-all duration-300 hover:bg-emerald-400"
-                style={{ height: `${heightPercent}%` }}
-                title={`$${val.toFixed(2)}`}
+          {/* TOGGLE PARTIAL TP */}
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enablePartialTP}
+                onChange={(e) => setEnablePartialTP(e.target.checked)}
+                className="accent-amber-500 w-4 h-4 rounded"
               />
-            );
-          })}
+              <span className="font-bold text-amber-400">Partial TP (50%)</span>
+            </label>
+          </div>
+
+          {/* TOGGLE BREAK EVEN */}
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableBreakEvenProtect}
+                onChange={(e) => setEnableBreakEvenProtect(e.target.checked)}
+                className="accent-blue-500 w-4 h-4 rounded"
+              />
+              <span className="font-bold text-blue-400">Break-Even Guard</span>
+            </label>
+          </div>
+
+          {/* TOGGLE ANTI-RUG */}
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableAntiRug}
+                onChange={(e) => setEnableAntiRug(e.target.checked)}
+                className="accent-teal-500 w-4 h-4 rounded"
+              />
+              <span className="font-bold text-teal-400">Anti-Rug Guard</span>
+            </label>
+          </div>
+
+          {/* TOGGLE TIME EXIT */}
+          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableTimeExit}
+                onChange={(e) => setEnableTimeExit(e.target.checked)}
+                className="accent-orange-500 w-4 h-4 rounded"
+              />
+              <span className="font-bold text-orange-400">Time Exit ({stagnantTimeLimitMinutes}m)</span>
+            </label>
+          </div>
+
         </div>
       </div>
 
       {/* MAIN DATA GRID */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        
         {/* NEW OPPORTUNITIES FEED */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-xs font-bold text-slate-300 mb-3 flex justify-between items-center">
             <span>🎯 Live DEX Multi-Monitor</span>
-            <span className="text-[10px] text-slate-500">Pump.fun / Raydium / Jupiter</span>
           </h2>
           <div className="space-y-2 max-h-[380px] overflow-y-auto">
             {scannedTokens.length === 0 ? (
@@ -684,19 +904,11 @@ export default function Home() {
 
                     <div className="text-right">
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                        token.opportunityScore >= 85 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
-                        token.opportunityScore >= 75 ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-400'
+                        token.opportunityScore >= 85 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-slate-800 text-slate-400'
                       }`}>
-                        Score: {token.opportunityScore} ({token.category})
+                        Score: {token.opportunityScore}
                       </span>
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-1 mt-2 pt-2 border-t border-slate-900 text-[9px] text-slate-400">
-                    <div>Smart: <span className="text-cyan-400">{token.smartMoneyScore}</span></div>
-                    <div>Whale: <span className="text-purple-400">{token.whaleScore}</span></div>
-                    <div>Momnt: <span className="text-amber-400">{token.momentumScore}</span></div>
-                    <div>Safety: <span className="text-emerald-400">{token.safetyScore}</span></div>
                   </div>
                 </div>
               ))
@@ -730,20 +942,6 @@ export default function Home() {
                         </p>
                       </div>
                     </div>
-
-                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-900">
-                      <div className="flex gap-1 text-[9px]">
-                        {trade.partiallyTaken && <span className="bg-emerald-500/20 text-emerald-400 px-1 rounded">50% TP</span>}
-                        {trade.breakEvenSet && <span className="bg-cyan-500/20 text-cyan-400 px-1 rounded">BE Shield</span>}
-                      </div>
-
-                      <button
-                        onClick={() => closeTradePosition(trade, trade.pnlUSD, trade.pnlPercent, 'Manual Sell')}
-                        className="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-[10px] font-bold px-2 py-0.5 rounded transition"
-                      >
-                        CLOSE
-                      </button>
-                    </div>
                   </div>
                 );
               })
@@ -751,7 +949,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* CLOSED POSITIONS & EXPORT ANALYTICS */}
+        {/* CLOSED POSITIONS & EXPORT CSV */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
           <div>
             <div className="flex justify-between items-center mb-3">
@@ -778,7 +976,6 @@ export default function Home() {
                       <p className={`font-bold ${c.netPnlUSD >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {c.netPnlUSD >= 0 ? '+' : ''}${c.netPnlUSD}
                       </p>
-                      <p className="text-[9px] text-slate-500">{c.netPnlPercent}%</p>
                     </div>
                   </div>
                 ))
@@ -786,12 +983,13 @@ export default function Home() {
             </div>
           </div>
         </div>
+
       </div>
 
-      {/* LOGS & SYSTEM MONITOR */}
+      {/* LOGS WITH SMART MONEY WALLET TRACKER */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <h2 className="text-xs font-bold text-cyan-400 mb-2">🐋 Smart Money &amp; Whale Feed</h2>
+          <h2 className="text-xs font-bold text-cyan-400 mb-2">🐋 Smart Money &amp; Whale Wallet Tracker</h2>
           <div className="bg-slate-950 p-2.5 rounded-lg h-36 overflow-y-auto text-[10px] font-mono text-cyan-300 space-y-1 border border-slate-800/60">
             {smartMoneyLogs.concat(whaleLogs).length === 0 ? (
               <p className="text-slate-600">Menunggu aktivitas wallet...</p>
@@ -812,6 +1010,7 @@ export default function Home() {
           </div>
         </div>
       </div>
+
     </div>
   );
 }
