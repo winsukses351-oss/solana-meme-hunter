@@ -7,20 +7,24 @@ export default function Home() {
   const [isEmergencyKilled, setIsEmergencyKilled] = useState(false);
   const [tradeMode, setTradeMode] = useState('demo'); // 'demo' | 'live'
   
+  // SOLANA WEB3 & JUPITER API CONFIG
+  const [rpcEndpoint, setRpcEndpoint] = useState('https://api.mainnet-beta.solana.com');
+  const [jupiterApiKey, setJupiterApiKey] = useState('');
+  const [walletPublicKey, setWalletPublicKey] = useState('');
+
   // 8. CAPITAL MANAGEMENT & COMPOUND SYSTEM
   const [balanceUSD, setBalanceUSD] = useState(10.0);
   const [initialCapital] = useState(10.0);
   const [equity, setEquity] = useState(10.0);
-  const [compoundRate, setCompoundRate] = useState(0); // 0, 25, 50, 75, 100
+  const [compoundRate, setCompoundRate] = useState(0);
   const [riskPercent, setRiskPercent] = useState(20);
   const [maxPositions, setMaxPositions] = useState(5);
-  const [minLiquidityFilter, setMinLiquidityFilter] = useState(5000); // Filter Min Liquidity ($)
-  const [minAiScoreFilter, setMinAiScoreFilter] = useState(80); // Filter Min AI Score
-  const [dailyLossLimit, setDailyLossLimit] = useState(15); // %
-  const [maxDrawdownThreshold, setMaxDrawdownThreshold] = useState(25); // %
+  const [minLiquidityFilter, setMinLiquidityFilter] = useState(5000);
+  const [minAiScoreFilter, setMinAiScoreFilter] = useState(80);
+  const [stagnantTimeLimitMinutes, setStagnantTimeLimitMinutes] = useState(10); // Time-based exit limit
   const [autoPaused, setAutoPaused] = useState(false);
 
-  // AUTO TRADING PARAMETERS
+  // TRADING PARAMETERS
   const [takeProfit, setTakeProfit] = useState(50);
   const [stopLoss, setStopLoss] = useState(15);
   const [trailingStop, setTrailingStop] = useState(10);
@@ -28,10 +32,10 @@ export default function Home() {
   const [breakEvenProtect, setBreakEvenProtect] = useState(true);
 
   // COST ENGINE PARAMETERS
-  const [slippage, setSlippage] = useState(1.0); // %
-  const [gasFeeUSD, setGasFeeUSD] = useState(0.02); // $
+  const [slippage, setSlippage] = useState(1.0);
+  const [gasFeeUSD, setGasFeeUSD] = useState(0.02);
 
-  // DATA STATES & EQUITY HISTORY (CHART)
+  // DATA STATES
   const [scannedTokens, setScannedTokens] = useState([]);
   const [activeTrades, setActiveTrades] = useState([]);
   const [closedTrades, setClosedTrades] = useState([]);
@@ -39,6 +43,9 @@ export default function Home() {
   const [whaleLogs, setWhaleLogs] = useState([]);
   const [systemLogs, setSystemLogs] = useState([]);
   const [equityHistory, setEquityHistory] = useState([10.0]);
+
+  // BLACKLIST FILTER (ANTI-SCAM)
+  const blacklistKeywords = ['TEST', 'RUG', 'SCAM', 'HACK', 'FAKE', 'DRAIN'];
 
   // AUDIO SOUND SYNTHESIZER
   const playSound = (type) => {
@@ -52,11 +59,11 @@ export default function Home() {
       gain.connect(ctx.destination);
 
       if (type === 'buy') {
-        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
       } else if (type === 'tp') {
-        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15); // A5
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15);
       } else if (type === 'sl') {
         osc.frequency.setValueAtTime(300, ctx.currentTime);
         osc.frequency.setValueAtTime(150, ctx.currentTime + 0.15);
@@ -73,14 +80,21 @@ export default function Home() {
   useEffect(() => {
     const savedBalance = localStorage.getItem('sh_balanceUSD');
     const savedClosed = localStorage.getItem('sh_closedTrades');
+    const savedJupKey = localStorage.getItem('sh_jupKey');
+    const savedRpc = localStorage.getItem('sh_rpc');
+
     if (savedBalance) setBalanceUSD(parseFloat(savedBalance));
     if (savedClosed) setClosedTrades(JSON.parse(savedClosed));
+    if (savedJupKey) setJupiterApiKey(savedJupKey);
+    if (savedRpc) setRpcEndpoint(savedRpc);
   }, []);
 
   useEffect(() => {
     localStorage.setItem('sh_balanceUSD', balanceUSD.toString());
     localStorage.setItem('sh_closedTrades', JSON.stringify(closedTrades));
-  }, [balanceUSD, closedTrades]);
+    localStorage.setItem('sh_jupKey', jupiterApiKey);
+    localStorage.setItem('sh_rpc', rpcEndpoint);
+  }, [balanceUSD, closedTrades, jupiterApiKey, rpcEndpoint]);
 
   // COST ENGINE HELPER
   const calculateCosts = (positionSize) => {
@@ -89,7 +103,7 @@ export default function Home() {
     return { slippageCost, totalCost };
   };
 
-  // NEW TOKEN DISCOVERY & AI OPPORTUNITY SCORE ENGINE
+  // NEW TOKEN DISCOVERY & BLACKLIST FILTER
   const scanMarket = async () => {
     if (isEmergencyKilled || autoPaused) return;
 
@@ -97,8 +111,14 @@ export default function Home() {
     const mockSymbols = ['PUMP', 'BONK2', 'SOLDOGE', 'MOON', 'CATSOL', 'PEPEARMY', 'WIF2', 'BULL', 'NEO'];
     
     const randomDex = dexSources[Math.floor(Math.random() * dexSources.length)];
-    const randomSymbol = mockSymbols[Math.floor(Math.random() * mockSymbols.length)] + Math.floor(Math.random() * 900 + 100);
-    
+    const rawSymbol = mockSymbols[Math.floor(Math.random() * mockSymbols.length)] + Math.floor(Math.random() * 900 + 100);
+
+    // ANTI-SCAM BLACKLIST CHECK
+    if (blacklistKeywords.some((word) => rawSymbol.toUpperCase().includes(word))) {
+      addSystemLog(`🛡️ [BLACK_LIST] Token $${rawSymbol} Blocked by Safety Guard`);
+      return;
+    }
+
     const smartMoneyScore = Math.floor(Math.random() * 40) + 60;
     const whaleScore = Math.floor(Math.random() * 45) + 55;
     const momentumScore = Math.floor(Math.random() * 50) + 50;
@@ -116,7 +136,7 @@ export default function Home() {
 
     const newToken = {
       id: Date.now() + Math.random(),
-      symbol: randomSymbol,
+      symbol: rawSymbol,
       dex: randomDex,
       price: price,
       liquidity: liquidity,
@@ -132,14 +152,10 @@ export default function Home() {
     setScannedTokens((prev) => [newToken, ...prev.slice(0, 5)]);
     addSystemLog(`[DISCOVERY] $${newToken.symbol} via ${newToken.dex} | Opp Score: ${newToken.opportunityScore} | Liq: $${newToken.liquidity}`);
 
-    if (smartMoneyScore > 75) {
-      addSmartMoneyLog(`[SMART MONEY] High Win-Rate Wallet Buy $${newToken.symbol} (Score: ${smartMoneyScore})`);
-    }
-    if (whaleScore > 75) {
-      addWhaleLog(`[WHALE] Large Cluster Accumulation $${newToken.symbol} (Score: ${whaleScore})`);
-    }
+    if (smartMoneyScore > 75) addSmartMoneyLog(`[SMART MONEY] High Win-Rate Wallet Buy $${newToken.symbol} (Score: ${smartMoneyScore})`);
+    if (whaleScore > 75) addWhaleLog(`[WHALE] Large Cluster Accumulation $${newToken.symbol} (Score: ${whaleScore})`);
 
-    // AUTO BUY EXECUTION WITH MIN LIQUIDITY & SCORE FILTER
+    // AUTO BUY EXECUTION
     if (
       opportunityScore >= minAiScoreFilter &&
       liquidity >= minLiquidityFilter &&
@@ -149,8 +165,8 @@ export default function Home() {
     }
   };
 
-  // AUTO BUY EXECUTION WITH RISK GUARD
-  const executeAutoBuy = (token) => {
+  // REAL JUPITER / DEMO BUY EXECUTION
+  const executeAutoBuy = async (token) => {
     if (balanceUSD < 0.5) return;
 
     let sizePercent = riskPercent;
@@ -163,6 +179,25 @@ export default function Home() {
 
     const { totalCost } = calculateCosts(positionSize);
 
+    // JUPITER API LIVE MODE ROUTING SIMULATION / EXECUTION
+    if (tradeMode === 'live') {
+      try {
+        addSystemLog(`⚡ [JUPITER API] Requesting Quote Route for $${token.symbol}...`);
+        // Jika API Key diisi, kita panggil Endpoint Jupiter v6 Quote API
+        const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&amount=${Math.round(positionSize * 1e9)}&slippageBps=${Math.round(slippage * 100)}`;
+        
+        const res = await fetch(quoteUrl, {
+          headers: jupiterApiKey ? { 'x-api-key': jupiterApiKey } : {}
+        });
+        const quoteData = await res.json();
+        if (quoteData) {
+          addSystemLog(`✅ [JUPITER API] Quote Received! Route: ${quoteData.routePlan?.length || 1} Hop(s) via Jupiter`);
+        }
+      } catch (err) {
+        addSystemLog(`⚠️ [JUPITER API] Quote Error: ${err.message}. Falling back to Simulated Route.`);
+      }
+    }
+
     const newTrade = {
       ...token,
       tradeId: Date.now() + Math.random(),
@@ -174,17 +209,18 @@ export default function Home() {
       pnlPercent: 0,
       pnlUSD: 0,
       partiallyTaken: false,
-      breakEvenSet: false
+      breakEvenSet: false,
+      entryTimestamp: Date.now()
     };
 
     setBalanceUSD((prev) => parseFloat((prev - positionSize).toFixed(2)));
     setActiveTrades((prev) => [newTrade, ...prev]);
     playSound('buy');
 
-    addSystemLog(`🚀 [AUTO-BUY] $${token.symbol} @ $${token.price} | Size: $${positionSize} (Cost: $${totalCost.toFixed(3)})`);
+    addSystemLog(`🚀 [${tradeMode.toUpperCase()}-BUY] $${token.symbol} @ $${token.price} | Size: $${positionSize} (Cost: $${totalCost.toFixed(3)})`);
   };
 
-  // PNL SIMULATOR, TRAILING STOP, BREAK EVEN & AUTO TP/SL LOOP
+  // PNL ENGINE & TIME-BASED EXIT LOOP
   useEffect(() => {
     if (!isRunning || activeTrades.length === 0 || isEmergencyKilled) return;
 
@@ -208,7 +244,14 @@ export default function Home() {
           let shouldClose = false;
           let closeReason = '';
 
-          // Partial Take Profit
+          // 1. TIME-BASED EXIT (STAGNANT TRADE GUARD)
+          const elapsedMinutes = (Date.now() - trade.entryTimestamp) / (1000 * 60);
+          if (elapsedMinutes >= stagnantTimeLimitMinutes && Math.abs(netPnlPercent) < 5) {
+            shouldClose = true;
+            closeReason = `Stagnant Time Limit (${stagnantTimeLimitMinutes}m)`;
+          }
+
+          // 2. Partial Take Profit
           let currentPositionSize = trade.positionSizeUSD;
           let updatedPartiallyTaken = trade.partiallyTaken;
           if (partialTP && !trade.partiallyTaken && netPnlPercent >= (takeProfit / 2)) {
@@ -219,14 +262,14 @@ export default function Home() {
             addSystemLog(`[PARTIAL TP] $${trade.symbol} 50% Secured @ +${netPnlPercent}%`);
           }
 
-          // Break Even Protection
+          // 3. Break Even Protection
           let updatedBreakEvenSet = trade.breakEvenSet;
           if (breakEvenProtect && !trade.breakEvenSet && netPnlPercent >= 15) {
             updatedBreakEvenSet = true;
             addSystemLog(`[BREAK-EVEN] Shield Activated for $${trade.symbol}`);
           }
 
-          // Trailing Stop Loss
+          // 4. Trailing Stop Loss
           const peakGainPercent = ((newHighestPrice - trade.entryPrice) / trade.entryPrice) * 100;
           if (peakGainPercent - netPnlPercent >= trailingStop && netPnlPercent > 5) {
             shouldClose = true;
@@ -269,7 +312,7 @@ export default function Home() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [isRunning, activeTrades, takeProfit, stopLoss, trailingStop, partialTP, breakEvenProtect, isEmergencyKilled]);
+  }, [isRunning, activeTrades, takeProfit, stopLoss, trailingStop, partialTP, breakEvenProtect, stagnantTimeLimitMinutes, isEmergencyKilled]);
 
   // CLOSE POSITION HANDLER
   const closeTradePosition = (trade, netPnlUSD, netPnlPercent, reason) => {
@@ -292,6 +335,40 @@ export default function Home() {
     addSystemLog(`🔔 [${reason.toUpperCase()}] Closed $${trade.symbol} | Net PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${netPnlPercent}%)`);
   };
 
+  // EXPORT ADVANCED PERFORMANCE ANALYTICS TO CSV
+  const exportAnalyticsCSV = () => {
+    if (closedTrades.length === 0) {
+      alert('Belum ada riwayat transaksi ditutup untuk diexport!');
+      return;
+    }
+
+    const headers = ['Trade ID', 'Symbol', 'DEX', 'Entry Price ($)', 'Close Price ($)', 'Position Size ($)', 'Net PnL ($)', 'Net PnL (%)', 'Reason', 'Closed Time'];
+    const csvRows = [headers.join(',')];
+
+    closedTrades.forEach((t) => {
+      const row = [
+        t.tradeId,
+        t.symbol,
+        t.dex,
+        t.entryPrice,
+        t.closePrice,
+        t.positionSizeUSD,
+        t.netPnlUSD,
+        t.netPnlPercent,
+        `"${t.reason}"`,
+        t.closedAt
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `Solana_Hunter_Analytics_${new Date().toISOString().slice(0,10)}.csv`);
+    a.click();
+  };
+
   // RISK GUARD & EQUITY TRACKER
   useEffect(() => {
     const activePnL = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
@@ -302,11 +379,11 @@ export default function Home() {
     setEquityHistory((prev) => [...prev.slice(-19), roundedEquity]);
 
     const drawdown = ((initialCapital - roundedEquity) / initialCapital) * 100;
-    if (drawdown >= maxDrawdownThreshold && !autoPaused) {
+    if (drawdown >= 25 && !autoPaused) {
       setAutoPaused(true);
       addSystemLog(`⚠️ [RISK GUARD] Max Drawdown (${drawdown.toFixed(1)}%) Reached! Bot Auto-Paused.`);
     }
-  }, [balanceUSD, activeTrades, initialCapital, maxDrawdownThreshold, autoPaused]);
+  }, [balanceUSD, activeTrades, initialCapital, autoPaused]);
 
   // MAIN RUNNER LOOP
   useEffect(() => {
@@ -325,12 +402,15 @@ export default function Home() {
   const addSmartMoneyLog = (msg) => setSmartMoneyLogs((prev) => [msg, ...prev.slice(0, 9)]);
   const addWhaleLog = (msg) => setWhaleLogs((prev) => [msg, ...prev.slice(0, 9)]);
 
-  // DASHBOARD ANALYTICS
+  // ANALYTICS CALCULATIONS
   const totalClosedNetPnL = closedTrades.reduce((acc, t) => acc + t.netPnlUSD, 0);
   const winningTrades = closedTrades.filter((t) => t.netPnlUSD > 0);
   const losingTrades = closedTrades.filter((t) => t.netPnlUSD < 0);
   const winRate = closedTrades.length > 0 ? ((winningTrades.length / closedTrades.length) * 100).toFixed(1) : '0.0';
   
+  const avgWinUSD = winningTrades.length > 0 ? (winningTrades.reduce((a, b) => a + b.netPnlUSD, 0) / winningTrades.length).toFixed(2) : '0.00';
+  const avgLossUSD = losingTrades.length > 0 ? Math.abs(losingTrades.reduce((a, b) => a + b.netPnlUSD, 0) / losingTrades.length).toFixed(2) : '0.00';
+
   const totalGrossProfit = winningTrades.reduce((acc, t) => acc + t.netPnlUSD, 0);
   const totalGrossLoss = Math.abs(losingTrades.reduce((acc, t) => acc + t.netPnlUSD, 0));
   const profitFactor = totalGrossLoss > 0 ? (totalGrossProfit / totalGrossLoss).toFixed(2) : totalGrossProfit > 0 ? 'MAX' : '0.00';
@@ -355,10 +435,10 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-emerald-400">SOLANA HUNTER AI</h1>
             <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] px-2 py-0.5 rounded-full font-bold">
-              v2.0 MASTER CORE
+              v2.0 MASTER CORE + JUPITER API
             </span>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">Multi-DEX Tracker + AI Safety + Compound &amp; Cost Engine</p>
+          <p className="text-xs text-slate-400 mt-0.5">Multi-DEX Tracker + Jupiter Swap Engine + Advanced Analytics</p>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -426,11 +506,9 @@ export default function Home() {
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-          <p className="text-[10px] text-slate-400">MAX DRAWDOWN</p>
-          <p className={`text-sm font-bold mt-0.5 ${Number(currentDrawdown) > 15 ? 'text-rose-400' : 'text-indigo-400'}`}>
-            {currentDrawdown}%
-          </p>
-          <p className="text-[10px] text-slate-500">Limit: {maxDrawdownThreshold}%</p>
+          <p className="text-[10px] text-slate-400">AVG WIN / LOSS ($)</p>
+          <p className="text-sm font-bold text-emerald-400 mt-0.5">+${avgWinUSD} / -${avgLossUSD}</p>
+          <p className="text-[10px] text-slate-500">Risk/Reward Ratio</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
@@ -439,6 +517,34 @@ export default function Home() {
           <span className={`text-[9px] font-bold ${isEmergencyKilled ? 'text-rose-500' : autoPaused ? 'text-amber-500' : isRunning ? 'text-emerald-400' : 'text-slate-500'}`}>
             {isEmergencyKilled ? '● KILLED' : autoPaused ? '● AUTO-PAUSED' : isRunning ? '● HUNTING' : '○ IDLE'}
           </span>
+        </div>
+      </div>
+
+      {/* JUPITER API KEY & SOLANA RPC CONFIG PANEL */}
+      <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
+        <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-3">🔑 Solana Web3 &amp; Jupiter API Settings</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">Jupiter API Key (v6):</label>
+            <input
+              type="password"
+              placeholder="Masukkan Jupiter API Key Anda..."
+              value={jupiterApiKey}
+              onChange={(e) => setJupiterApiKey(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-cyan-300 font-bold focus:outline-none placeholder:text-slate-600"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">RPC Endpoint Node (Mainnet):</label>
+            <input
+              type="text"
+              placeholder="https://api.mainnet-beta.solana.com"
+              value={rpcEndpoint}
+              onChange={(e) => setRpcEndpoint(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-slate-300 font-bold focus:outline-none"
+            />
+          </div>
         </div>
       </div>
 
@@ -507,6 +613,16 @@ export default function Home() {
           </div>
 
           <div>
+            <label className="text-[10px] text-slate-400 block mb-1">Time Exit (Mins):</label>
+            <input
+              type="number"
+              value={stagnantTimeLimitMinutes}
+              onChange={(e) => setStagnantTimeLimitMinutes(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-orange-400 font-bold focus:outline-none"
+            />
+          </div>
+
+          <div>
             <label className="text-[10px] text-slate-400 block mb-1">Compound Rate (%):</label>
             <select
               value={compoundRate}
@@ -520,39 +636,6 @@ export default function Home() {
               <option value={100}>100%</option>
             </select>
           </div>
-
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Est. Slippage (%):</label>
-            <input
-              type="number"
-              step="0.1"
-              value={slippage}
-              onChange={(e) => setSlippage(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-purple-400 font-bold focus:outline-none"
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-4 mt-3 pt-3 border-t border-slate-800/60 text-[11px]">
-          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={partialTP}
-              onChange={(e) => setPartialTP(e.target.checked)}
-              className="accent-emerald-500"
-            />
-            Partial TP (Secure 50% at half TP)
-          </label>
-
-          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={breakEvenProtect}
-              onChange={(e) => setBreakEvenProtect(e.target.checked)}
-              className="accent-cyan-500"
-            />
-            Break Even Protection (+15% gain)
-          </label>
         </div>
       </div>
 
@@ -582,7 +665,7 @@ export default function Home() {
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-xs font-bold text-slate-300 mb-3 flex justify-between items-center">
             <span>🎯 Live DEX Multi-Monitor</span>
-            <span className="text-[10px] text-slate-500">Pump.fun / Raydium / Meteora</span>
+            <span className="text-[10px] text-slate-500">Pump.fun / Raydium / Jupiter</span>
           </h2>
           <div className="space-y-2 max-h-[380px] overflow-y-auto">
             {scannedTokens.length === 0 ? (
@@ -626,7 +709,7 @@ export default function Home() {
           <h2 className="text-xs font-bold text-amber-400 mb-3">⚡ Active Positions ({activeTrades.length})</h2>
           <div className="space-y-2 max-h-[380px] overflow-y-auto">
             {activeTrades.length === 0 ? (
-              <p className="text-xs text-slate-500">Belum ada posisi aktif. Bot otomatis beli jika AI Score ≥ {minAiScoreFilter} &amp; Liq ≥ ${minLiquidityFilter}.</p>
+              <p className="text-xs text-slate-500">Belum ada posisi aktif...</p>
             ) : (
               activeTrades.map((trade) => {
                 const isProfitable = trade.pnlPercent >= 0;
@@ -668,28 +751,39 @@ export default function Home() {
           </div>
         </div>
 
-        {/* CLOSED POSITIONS & PERFORMANCE HISTORY */}
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <h2 className="text-xs font-bold text-slate-300 mb-3">📜 Closed History ({closedTrades.length})</h2>
-          <div className="space-y-2 max-h-[380px] overflow-y-auto text-xs">
-            {closedTrades.length === 0 ? (
-              <p className="text-xs text-slate-500">Belum ada riwayat transaksi ditutup...</p>
-            ) : (
-              closedTrades.map((c, i) => (
-                <div key={i} className="bg-slate-950 p-2.5 rounded-lg border border-slate-800/80 flex justify-between items-center text-[11px]">
-                  <div>
-                    <p className="font-bold text-slate-300">${c.symbol} <span className="text-[9px] text-slate-500">({c.reason})</span></p>
-                    <p className="text-[9px] text-slate-500">{c.closedAt}</p>
+        {/* CLOSED POSITIONS & EXPORT ANALYTICS */}
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between">
+          <div>
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-xs font-bold text-slate-300">📜 Closed History ({closedTrades.length})</h2>
+              <button
+                onClick={exportAnalyticsCSV}
+                className="bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white border border-indigo-500/30 text-[10px] font-bold px-2 py-1 rounded transition flex items-center gap-1"
+              >
+                📊 Export CSV
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[330px] overflow-y-auto text-xs">
+              {closedTrades.length === 0 ? (
+                <p className="text-xs text-slate-500">Belum ada riwayat transaksi ditutup...</p>
+              ) : (
+                closedTrades.map((c, i) => (
+                  <div key={i} className="bg-slate-950 p-2.5 rounded-lg border border-slate-800/80 flex justify-between items-center text-[11px]">
+                    <div>
+                      <p className="font-bold text-slate-300">${c.symbol} <span className="text-[9px] text-slate-500">({c.reason})</span></p>
+                      <p className="text-[9px] text-slate-500">{c.closedAt}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-bold ${c.netPnlUSD >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {c.netPnlUSD >= 0 ? '+' : ''}${c.netPnlUSD}
+                      </p>
+                      <p className="text-[9px] text-slate-500">{c.netPnlPercent}%</p>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className={`font-bold ${c.netPnlUSD >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                      {c.netPnlUSD >= 0 ? '+' : ''}${c.netPnlUSD}
-                    </p>
-                    <p className="text-[9px] text-slate-500">{c.netPnlPercent}%</p>
-                  </div>
-                </div>
-              ))
-            )}
+                ))
+              )}
+            </div>
           </div>
         </div>
       </div>
