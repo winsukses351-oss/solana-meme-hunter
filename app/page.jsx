@@ -11,32 +11,40 @@ export default function Home() {
   const MASTER_PASSWORD = 'erwinirawan1234567890';
 
   // 2. SOLANA WEB3 & HELIUS RPC STATES
+  // Default diisi RPC Helius milikmu
   const [rpcEndpoint, setRpcEndpoint] = useState('https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY');
   const [jupiterApiKey, setJupiterApiKey] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
   const [isWalletConnected, setIsWalletConnected] = useState(false);
-  const [realSolBalance, setRealSolBalance] = useState(0.1531);
-  const [solPriceUSD, setSolPriceUSD] = useState(0);
+  const [realSolBalance, setRealSolBalance] = useState(0.1531); // Default balance
+  const [solPriceUSD, setSolPriceUSD] = useState(0); // Real-time SOL price dari Helius/Jupiter
 
   // 3. FETCH REAL-TIME SOL PRICE LEWAT RPC HELIUS
   useEffect(() => {
     const fetchSolPriceViaRPC = async () => {
       if (!rpcEndpoint) return;
       try {
+        // Menggunakan fetch langsung ke RPC Helius dengan payload method Jupiter Price / Token Account Info
         const res = await fetch(rpcEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             jsonrpc: '2.0',
             id: 'get-sol-price',
-            method: 'getAsset',
-            params: { id: 'So11111111111111111111111111111111111111112' }
+            method: 'getAsset', // Helius Digital Asset Standard (DAS) API
+            params: {
+              id: 'So11111111111111111111111111111111111111112' // WSOL Mint
+            }
           })
         });
+        
         const data = await res.json();
+        
+        // Cek jika Helius DAS API mengembalikan harga token
         if (data?.result?.token_info?.price_info?.price_per_token) {
           setSolPriceUSD(parseFloat(data.result.token_info.price_info.price_per_token));
         } else {
+          // Fallback via Jupiter v2 menggunakan RPC connection headers Helius
           const jupRes = await fetch('https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112');
           const jupData = await jupRes.json();
           const price = jupData?.data?.So11111111111111111111111111111111111111112?.price;
@@ -46,17 +54,20 @@ export default function Home() {
         console.log('Gagal update harga SOL via RPC:', err);
       }
     };
+
     fetchSolPriceViaRPC();
-    const priceInterval = setInterval(fetchSolPriceViaRPC, 5000);
+    const priceInterval = setInterval(fetchSolPriceViaRPC, 5000); // Fetch tiap 5 detik lewat Helius RPC
     return () => clearInterval(priceInterval);
   }, [rpcEndpoint]);
 
   // 4. IN-APP NOTIFICATION SYSTEM
   const [notifications, setNotifications] = useState([]);
+
   const triggerNotification = (title, message) => {
     const id = Date.now();
     setNotifications((prev) => [{ id, title, message }, ...prev.slice(0, 4)]);
     playTingSound();
+
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     }, 4000);
@@ -70,12 +81,16 @@ export default function Home() {
       const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
+
       osc.type = 'sine';
       osc.frequency.setValueAtTime(1200, ctx.currentTime);
+
       gain.gain.setValueAtTime(0.15, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+
       osc.connect(gain);
       gain.connect(ctx.destination);
+
       osc.start();
       osc.stop(ctx.currentTime + 0.4);
     } catch (e) {
@@ -87,6 +102,7 @@ export default function Home() {
   const [balanceUSD, setBalanceUSD] = useState(10.0);
   const [initialCapital] = useState(10.0);
   const [equity, setEquity] = useState(10.0);
+  
   const [riskPercent, setRiskPercent] = useState(20);
   const [maxPositions, setMaxPositions] = useState(5);
   const [minLiquidityFilter, setMinLiquidityFilter] = useState(5000);
@@ -95,11 +111,6 @@ export default function Home() {
   const [slippage, setSlippage] = useState(1.0);
   const [gasFeeUSD, setGasFeeUSD] = useState(0.02);
   const [autoPaused, setAutoPaused] = useState(false);
-
-  // [UPGRADE FEATURE FILTER STATES]
-  const [minVolume24h, setMinVolume24h] = useState(10000); // Filter Vol 24 jam min $10,000
-  const [maxTopHolderPercent, setMaxTopHolderPercent] = useState(25); // Max kepemilikan Top 10 Holder 25%
-  const [requireDexConsensus, setRequireDexConsensus] = useState(true); // Membutuhkan persetujuan Multi-DEX
 
   // CONFIG ENGINE FEATURE TOGGLES
   const [enableCompound, setEnableCompound] = useState(false);
@@ -123,6 +134,7 @@ export default function Home() {
   const [whaleLogs, setWhaleLogs] = useState([]);
   const [systemLogs, setSystemLogs] = useState([]);
   const [equityHistory, setEquityHistory] = useState([10.0, 10.1, 10.2, 10.15, 10.4, 10.35, 10.6]);
+
   const blacklistKeywords = ['TEST', 'RUG', 'SCAM', 'HACK', 'FAKE', 'DRAIN'];
 
   // REFS FOR STABLE RE-RENDERS
@@ -142,6 +154,7 @@ export default function Home() {
     const savedClosed = localStorage.getItem('sh_closedTrades');
     const savedJupKey = localStorage.getItem('sh_jupKey');
     const savedRpc = localStorage.getItem('sh_rpc');
+
     if (savedBalance) setBalanceUSD(parseFloat(savedBalance));
     if (savedClosed) setClosedTrades(JSON.parse(savedClosed));
     if (savedJupKey) setJupiterApiKey(savedJupKey);
@@ -180,7 +193,9 @@ export default function Home() {
       const res = await fetch(rpcEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [address] })
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 1, method: 'getBalance', params: [address]
+        })
       });
       const data = await res.json();
       if (data.result) {
@@ -238,18 +253,14 @@ export default function Home() {
     return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
   };
 
-  // MARKET SCANNER WITH UPGRADED FILTERS
+  // MARKET SCANNER
   const scanMarket = async () => {
     if (isEmergencyKilledRef.current || autoPausedRef.current) return;
+
     const dexSources = ['Pump.fun', 'Raydium', 'Meteora', 'Jupiter', 'DexScreener'];
     const mockSymbols = ['PUMP', 'BONK2', 'SOLDOGE', 'MOON', 'CATSOL', 'PEPEARMY', 'WIF2', 'BULL', 'NEO'];
-
-    // Multi-DEX Consensus Logic (Minimal 2 DEX terdeteksi)
-    const primaryDex = dexSources[Math.floor(Math.random() * dexSources.length)];
-    const secondaryDex = dexSources[Math.floor(Math.random() * dexSources.length)];
-    const detectedDexes = Array.from(new Set([primaryDex, secondaryDex]));
-    const hasConsensus = detectedDexes.length >= 2;
-
+    
+    const randomDex = dexSources[Math.floor(Math.random() * dexSources.length)];
     const rawSymbol = mockSymbols[Math.floor(Math.random() * mockSymbols.length)] + Math.floor(Math.random() * 900 + 100);
 
     if (enableAntiRug && blacklistKeywords.some((w) => rawSymbol.toUpperCase().includes(w))) {
@@ -261,11 +272,8 @@ export default function Home() {
     const whaleScore = Math.floor(Math.random() * 45) + 55;
     const momentumScore = Math.floor(Math.random() * 50) + 50;
     const safetyScore = Math.floor(Math.random() * 35) + 65;
-    const opportunityScore = Math.round((smartMoneyScore + whaleScore + momentumScore + safetyScore) / 4);
 
-    // New Data Parameters
-    const volume24h = Math.floor(Math.random() * 150000) + 2000; // Mock Vol 24h
-    const topHolderPercent = Math.floor(Math.random() * 40) + 5; // Top 10 Holder concentration %
+    const opportunityScore = Math.round((smartMoneyScore + whaleScore + momentumScore + safetyScore) / 4);
 
     let category = 'Avoid';
     if (opportunityScore >= 90) category = 'Elite';
@@ -278,12 +286,9 @@ export default function Home() {
     const newToken = {
       id: Date.now() + Math.random(),
       symbol: rawSymbol,
-      dex: detectedDexes.join(' + '),
+      dex: randomDex,
       price,
       liquidity,
-      volume24h,
-      topHolderPercent,
-      hasConsensus,
       smartMoneyScore,
       whaleScore,
       momentumScore,
@@ -299,49 +304,36 @@ export default function Home() {
       const wallet = generateWalletAddress();
       addSmartMoneyLog(`[SMART MONEY] Wallet ${wallet} bought $${newToken.symbol} (Score: ${smartMoneyScore})`);
     }
+
     if (whaleScore > 75) {
       const wallet = generateWalletAddress();
       addWhaleLog(`[WHALE CLUSTER] Wallet ${wallet} accumulated $${newToken.symbol} (Score: ${whaleScore})`);
     }
 
-    // CHECK ALL FILTERS INCL. NEW CONSTRAINTS
-    const passesConsensus = !requireDexConsensus || hasConsensus;
-    const passesVolume = volume24h >= minVolume24h;
-    const passesHolders = topHolderPercent <= maxTopHolderPercent;
-
     if (
       opportunityScore >= minAiScoreFilter &&
       liquidity >= minLiquidityFilter &&
-      passesConsensus &&
-      passesVolume &&
-      passesHolders &&
       activeTradesRef.current.length < maxPositions
     ) {
       executeAutoBuy(newToken);
-    } else if (!passesConsensus && opportunityScore >= minAiScoreFilter) {
-      addSystemLog(`⚠️ [CONSENSUS REJECT] $${newToken.symbol} lack multi-DEX consensus.`);
-    } else if (!passesHolders && opportunityScore >= minAiScoreFilter) {
-      addSystemLog(`⚠️ [HOLDER REJECT] $${newToken.symbol} Top 10 holds ${topHolderPercent}% (> ${maxTopHolderPercent}% limit)`);
     }
   };
 
-  // BUY EXECUTION WITH DYNAMIC RISK SIZING
+  // BUY EXECUTION AKURAT DARI HARGA SOL HELIUS RPC
   const executeAutoBuy = async (token) => {
     if (tradeMode === 'live' && (!isWalletConnected || realSolBalance < 0.001)) {
       addSystemLog('⚠️ [LIVE ERROR] Wallet belum terhubung atau saldo SOL kurang!');
       return;
     }
 
+    // Menggunakan saldo real-time aktual berbasis harga pasar SOL dari Helius RPC
     const currentActiveBalanceUSD = tradeMode === 'live' ? (realSolBalance * solPriceUSD) : balanceUSD;
+
     if (currentActiveBalanceUSD <= 0) return;
 
-    // DYNAMIC RISK POSITION SIZING (Scaled by Opportunity Score)
-    // Score 100 = 100% dari risk, Score 80 = 80% dari risk base
-    const dynamicRiskMultiplier = Math.min(1.2, Math.max(0.6, token.opportunityScore / 100));
-    let sizePercent = riskPercent * dynamicRiskMultiplier;
-
+    let sizePercent = riskPercent;
     if (enableCompound && compoundRate > 0) {
-      sizePercent = Math.min(100, sizePercent * (1 + compoundRate / 100));
+      sizePercent = Math.min(100, riskPercent * (1 + compoundRate / 100));
     }
 
     const positionSize = parseFloat((currentActiveBalanceUSD * (sizePercent / 100)).toFixed(2));
@@ -366,8 +358,9 @@ export default function Home() {
       setBalanceUSD((prev) => parseFloat((prev - positionSize).toFixed(2)));
     }
     setActiveTrades((prev) => [newTrade, ...prev]);
-    triggerNotification(`🚀 OPEN BUY $${token.symbol}`, `Size: $${positionSize} (Risk Adj.) | DEX: ${token.dex}`);
-    addSystemLog(`🚀 [${tradeMode.toUpperCase()}-BUY] $${token.symbol} @ $${token.price} | Dyn Size: $${positionSize}`);
+
+    triggerNotification(`🚀 OPEN BUY $${token.symbol}`, `Size: $${positionSize} | DEX: ${token.dex}`);
+    addSystemLog(`🚀 [${tradeMode.toUpperCase()}-BUY] $${token.symbol} @ $${token.price} | Size: $${positionSize}`);
   };
 
   // PNL & EXIT LOOP
@@ -382,11 +375,11 @@ export default function Home() {
           const priceChange = (Math.random() * 16 - 7);
           const newPrice = trade.currentPrice * (1 + priceChange / 100);
           const newHighestPrice = Math.max(trade.highestPrice, newPrice);
-
+          
           const rawPnlPercent = ((newPrice - trade.entryPrice) / trade.entryPrice) * 100;
           const { totalCost: exitCost } = calculateCosts(trade.positionSizeUSD);
           const totalTradingCost = trade.entryCostUSD + exitCost;
-
+          
           let grossPnlUSD = trade.positionSizeUSD * (rawPnlPercent / 100);
           let netPnlUSD = parseFloat((grossPnlUSD - totalTradingCost).toFixed(2));
           let netPnlPercent = parseFloat(((netPnlUSD / trade.positionSizeUSD) * 100).toFixed(2));
@@ -404,7 +397,6 @@ export default function Home() {
 
           let currentPositionSize = trade.positionSizeUSD;
           let updatedPartiallyTaken = trade.partiallyTaken;
-
           if (enablePartialTP && !trade.partiallyTaken && enableTakeProfit && netPnlPercent >= (takeProfit / 2)) {
             const partialReturn = (currentPositionSize / 2) + (netPnlUSD / 2);
             if (tradeMode === 'demo') {
@@ -471,6 +463,7 @@ export default function Home() {
     if (tradeMode === 'demo') {
       setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
     }
+
     const closedItem = {
       ...trade,
       closePrice: trade.currentPrice,
@@ -479,6 +472,7 @@ export default function Home() {
       reason,
       closedAt: new Date().toLocaleTimeString('id-ID')
     };
+
     setClosedTrades((prev) => [closedItem, ...prev]);
     triggerNotification(`🔔 POSISI DITUTUP ($${trade.symbol})`, `PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${reason})`);
     addSystemLog(`🔔 [${reason.toUpperCase()}] Closed $${trade.symbol} | Net PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${netPnlPercent}%)`);
@@ -489,16 +483,19 @@ export default function Home() {
       alert('Belum ada riwayat transaksi ditutup!');
       return;
     }
+
     const headers = ['Trade ID', 'Symbol', 'DEX', 'Entry Price ($)', 'Close Price ($)', 'Position Size ($)', 'Net PnL ($)', 'Net PnL (%)', 'Reason', 'Closed Time'];
     const csvRows = [headers.join(',')];
+
     closedTrades.forEach((t) => {
       csvRows.push([t.tradeId, t.symbol, t.dex, t.entryPrice, t.closePrice, t.positionSizeUSD, t.netPnlUSD, t.netPnlPercent, `"${t.reason}"`, t.closedAt].join(','));
     });
+
     const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.setAttribute('href', url);
-    a.setAttribute('download', `Solana_Hunter_Analytics_${new Date().toISOString().slice(0, 10)}.csv`);
+    a.setAttribute('download', `Solana_Hunter_Analytics_${new Date().toISOString().slice(0,10)}.csv`);
     a.click();
   };
 
@@ -506,8 +503,8 @@ export default function Home() {
   useEffect(() => {
     const activePositionsUSD = activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0);
     const activePnLUSD = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
-    let baseBalanceUSD = 0;
 
+    let baseBalanceUSD = 0;
     if (tradeMode === 'live') {
       const totalWalletUSD = realSolBalance * solPriceUSD;
       baseBalanceUSD = Math.max(0, totalWalletUSD - activePositionsUSD);
@@ -517,6 +514,7 @@ export default function Home() {
 
     const realEquityUSD = baseBalanceUSD + activePositionsUSD + activePnLUSD;
     const roundedEquity = parseFloat(realEquityUSD.toFixed(2));
+
     setEquity(roundedEquity);
     setEquityHistory((prev) => [...prev.slice(-19), roundedEquity]);
 
@@ -538,7 +536,7 @@ export default function Home() {
       }, 3000);
     }
     return () => clearInterval(timer);
-  }, [isRunning, isEmergencyKilled, autoPaused, maxPositions, riskPercent, enableCompound, compoundRate, minLiquidityFilter, minAiScoreFilter, minVolume24h, maxTopHolderPercent, requireDexConsensus]);
+  }, [isRunning, isEmergencyKilled, autoPaused, maxPositions, riskPercent, enableCompound, compoundRate, minLiquidityFilter, minAiScoreFilter]);
 
   const addSystemLog = (msg) => setSystemLogs((prev) => [msg, ...prev.slice(0, 19)]);
   const addSmartMoneyLog = (msg) => setSmartMoneyLogs((prev) => [msg, ...prev.slice(0, 9)]);
@@ -556,29 +554,42 @@ export default function Home() {
 
   const renderEquityLineChart = () => {
     if (equityHistory.length < 2) return null;
+
     const width = 800;
     const height = 100;
     const padding = 10;
+
     const minVal = Math.min(...equityHistory);
     const maxVal = Math.max(...equityHistory);
     const range = maxVal - minVal || 1;
 
-    const points = equityHistory
-      .map((val, idx) => {
-        const x = (idx / (equityHistory.length - 1)) * (width - padding * 2) + padding;
-        const y = height - padding - ((val - minVal) / range) * (height - padding * 2);
-        return `${x},${y}`;
-      })
-      .join(' ');
+    const points = equityHistory.map((val, idx) => {
+      const x = (idx / (equityHistory.length - 1)) * (width - padding * 2) + padding;
+      const y = height - padding - ((val - minVal) / range) * (height - padding * 2);
+      return `${x},${y}`;
+    }).join(' ');
 
     return (
       <svg className="w-full h-24 overflow-visible" viewBox={`0 0 ${width} ${height}`}>
-        <polyline fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={points} />
+        <polyline
+          fill="none"
+          stroke="#10b981"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points}
+        />
         {equityHistory.map((val, idx) => {
           const x = (idx / (equityHistory.length - 1)) * (width - padding * 2) + padding;
           const y = height - padding - ((val - minVal) / range) * (height - padding * 2);
           return (
-            <circle key={idx} cx={x} cy={y} r="4" className="fill-emerald-400 stroke-slate-950 stroke-2 hover:r-6 transition-all">
+            <circle
+              key={idx}
+              cx={x}
+              cy={y}
+              r="4"
+              className="fill-emerald-400 stroke-slate-950 stroke-2 hover:r-6 transition-all"
+            >
               <title>${val.toFixed(2)}</title>
             </circle>
           );
@@ -589,10 +600,14 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-5 font-mono relative">
+      
       {/* NOTIFICATION OVERLAY */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-xs w-full pointer-events-none">
         {notifications.map((n) => (
-          <div key={n.id} className="pointer-events-auto bg-slate-900/95 border-l-4 border-emerald-400 border-slate-800 p-3 rounded-lg shadow-xl backdrop-blur-md text-xs">
+          <div
+            key={n.id}
+            className="pointer-events-auto bg-slate-900/95 border-l-4 border-emerald-400 border-slate-800 p-3 rounded-lg shadow-xl backdrop-blur-md text-xs"
+          >
             <div className="flex justify-between items-center mb-1">
               <span className="font-bold text-emerald-400">{n.title}</span>
               <span className="text-[9px] text-slate-500">Just now</span>
@@ -608,6 +623,7 @@ export default function Home() {
           <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl max-w-md w-full shadow-2xl">
             <h3 className="text-base font-bold text-emerald-400 mb-1">🔐 System Authentication Required</h3>
             <p className="text-xs text-slate-400 mb-4">Masukkan password master untuk mengaktifkan bot hunting.</p>
+            
             <form onSubmit={handleVerifyPassword} className="space-y-4">
               <input
                 type="password"
@@ -618,10 +634,17 @@ export default function Home() {
                 autoFocus
               />
               <div className="flex justify-end gap-2">
-                <button type="button" onClick={() => setIsAuthModalOpen(false)} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg"
+                >
                   Batal
                 </button>
-                <button type="submit" className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded-lg text-white">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-xs font-bold rounded-lg text-white"
+                >
                   Verify &amp; Start
                 </button>
               </div>
@@ -652,7 +675,10 @@ export default function Home() {
           </div>
 
           {!isWalletConnected ? (
-            <button onClick={connectWallet} className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2.5 rounded-lg text-xs transition shadow-lg shadow-purple-900/30">
+            <button
+              onClick={connectWallet}
+              className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2.5 rounded-lg text-xs transition shadow-lg shadow-purple-900/30"
+            >
               🟣 CONNECT PHANTOM
             </button>
           ) : (
@@ -661,7 +687,10 @@ export default function Home() {
                 <p className="text-[10px] text-purple-400 font-bold">{walletAddress.slice(0, 4)}...{walletAddress.slice(-4)}</p>
                 <p className="text-[10px] text-emerald-400 font-bold">{realSolBalance} SOL</p>
               </div>
-              <button onClick={disconnectWallet} className="text-rose-400 hover:text-rose-300 text-[10px] bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1 rounded">
+              <button
+                onClick={disconnectWallet}
+                className="text-rose-400 hover:text-rose-300 text-[10px] bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1 rounded"
+              >
                 Disconnect
               </button>
             </div>
@@ -685,13 +714,19 @@ export default function Home() {
           <p className="text-[10px] text-slate-400">TRADING MODE</p>
           <div className="flex gap-1 mt-1">
             <button
-              onClick={() => { setTradeMode('demo'); addSystemLog('🔄 [MODE] Switched to DEMO Mode'); }}
+              onClick={() => {
+                setTradeMode('demo');
+                addSystemLog('🔄 [MODE] Switched to DEMO Mode');
+              }}
               className={`flex-1 py-0.5 text-[9px] font-bold rounded ${tradeMode === 'demo' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}
             >
               DEMO
             </button>
             <button
-              onClick={() => { setTradeMode('live'); addSystemLog('⚠️ [MODE] Switched to LIVE ON-CHAIN Mode'); }}
+              onClick={() => {
+                setTradeMode('live');
+                addSystemLog('⚠️ [MODE] Switched to LIVE ON-CHAIN Mode');
+              }}
               className={`flex-1 py-0.5 text-[9px] font-bold rounded ${tradeMode === 'live' ? 'bg-rose-500 text-white font-bold animate-pulse' : 'bg-slate-800 text-slate-400'}`}
             >
               LIVE
@@ -767,12 +802,12 @@ export default function Home() {
         </div>
       </div>
 
-      {/* PARAMETERS PANEL (ENHANCED WITH NEW UPGRADE FILTERS) */}
+      {/* PARAMETERS PANEL */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
-        <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-3">🎛️ Risk, Filters &amp; Advanced Upgraded Parameters</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3 text-xs">
+        <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-3">🎛️ Risk, Filters &amp; Cost Parameters</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
           <div>
-            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Base Risk (%)</label>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Risk per Trade (%)</label>
             <input
               type="number"
               value={riskPercent}
@@ -780,6 +815,7 @@ export default function Home() {
               className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-emerald-400 font-bold focus:outline-none focus:border-emerald-500"
             />
           </div>
+
           <div>
             <label className="block text-slate-400 text-[10px] mb-1 font-bold">Min Liquidity ($)</label>
             <input
@@ -789,26 +825,9 @@ export default function Home() {
               className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-cyan-400 font-bold focus:outline-none focus:border-cyan-500"
             />
           </div>
+
           <div>
-            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Min Volume 24h ($)</label>
-            <input
-              type="number"
-              value={minVolume24h}
-              onChange={(e) => setMinVolume24h(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-blue-400 font-bold focus:outline-none focus:border-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Max Top10 Hold (%)</label>
-            <input
-              type="number"
-              value={maxTopHolderPercent}
-              onChange={(e) => setMaxTopHolderPercent(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-rose-400 font-bold focus:outline-none focus:border-rose-500"
-            />
-          </div>
-          <div>
-            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Min AI Score</label>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Min AI Score Filter</label>
             <input
               type="number"
               value={minAiScoreFilter}
@@ -816,8 +835,9 @@ export default function Home() {
               className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-amber-400 font-bold focus:outline-none focus:border-amber-500"
             />
           </div>
+
           <div>
-            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Max Trades</label>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Max Concurrent Trades</label>
             <input
               type="number"
               value={maxPositions}
@@ -825,16 +845,18 @@ export default function Home() {
               className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-indigo-400 font-bold focus:outline-none focus:border-indigo-500"
             />
           </div>
+
           <div>
-            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Slippage (%)</label>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Slippage Tolerance (%)</label>
             <input
               type="number"
               step="0.1"
               value={slippage}
               onChange={(e) => setSlippage(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-orange-400 font-bold focus:outline-none focus:border-orange-500"
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-rose-400 font-bold focus:outline-none focus:border-rose-500"
             />
           </div>
+
           <div>
             <label className="block text-slate-400 text-[10px] mb-1 font-bold">Gas Fee Est. ($)</label>
             <input
@@ -881,38 +903,82 @@ export default function Home() {
 
       {/* CONFIG ENGINE CHECKBOXES */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Config Engine (Features Toggle &amp; Upgrades)</h2>
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Config Engine (Features Toggle)</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enableTakeProfit} onChange={(e) => setEnableTakeProfit(e.target.checked)} className="accent-emerald-500 w-4 h-4 rounded" />
+              <input
+                type="checkbox"
+                checked={enableTakeProfit}
+                onChange={(e) => setEnableTakeProfit(e.target.checked)}
+                className="accent-emerald-500 w-4 h-4 rounded"
+              />
               <span className="font-bold text-emerald-400">Take Profit (%)</span>
             </label>
-            <input type="number" disabled={!enableTakeProfit} value={takeProfit} onChange={(e) => setTakeProfit(Number(e.target.value))} className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-emerald-400 font-bold disabled:opacity-40" />
+            <input
+              type="number"
+              disabled={!enableTakeProfit}
+              value={takeProfit}
+              onChange={(e) => setTakeProfit(Number(e.target.value))}
+              className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-emerald-400 font-bold disabled:opacity-40"
+            />
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enableStopLoss} onChange={(e) => setEnableStopLoss(e.target.checked)} className="accent-rose-500 w-4 h-4 rounded" />
+              <input
+                type="checkbox"
+                checked={enableStopLoss}
+                onChange={(e) => setEnableStopLoss(e.target.checked)}
+                className="accent-rose-500 w-4 h-4 rounded"
+              />
               <span className="font-bold text-rose-400">Stop Loss (%)</span>
             </label>
-            <input type="number" disabled={!enableStopLoss} value={stopLoss} onChange={(e) => setStopLoss(Number(e.target.value))} className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-rose-400 font-bold disabled:opacity-40" />
+            <input
+              type="number"
+              disabled={!enableStopLoss}
+              value={stopLoss}
+              onChange={(e) => setStopLoss(Number(e.target.value))}
+              className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-rose-400 font-bold disabled:opacity-40"
+            />
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enableTrailingStop} onChange={(e) => setEnableTrailingStop(e.target.checked)} className="accent-cyan-500 w-4 h-4 rounded" />
+              <input
+                type="checkbox"
+                checked={enableTrailingStop}
+                onChange={(e) => setEnableTrailingStop(e.target.checked)}
+                className="accent-cyan-500 w-4 h-4 rounded"
+              />
               <span className="font-bold text-cyan-400">Trailing Stop (%)</span>
             </label>
-            <input type="number" disabled={!enableTrailingStop} value={trailingStop} onChange={(e) => setTrailingStop(Number(e.target.value))} className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-cyan-400 font-bold disabled:opacity-40" />
+            <input
+              type="number"
+              disabled={!enableTrailingStop}
+              value={trailingStop}
+              onChange={(e) => setTrailingStop(Number(e.target.value))}
+              className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-right text-cyan-400 font-bold disabled:opacity-40"
+            />
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enableCompound} onChange={(e) => setEnableCompound(e.target.checked)} className="accent-indigo-500 w-4 h-4 rounded" />
+              <input
+                type="checkbox"
+                checked={enableCompound}
+                onChange={(e) => setEnableCompound(e.target.checked)}
+                className="accent-indigo-500 w-4 h-4 rounded"
+              />
               <span className="font-bold text-indigo-400">Compound Auto</span>
             </label>
-            <select disabled={!enableCompound} value={compoundRate} onChange={(e) => setCompoundRate(Number(e.target.value))} className="bg-slate-900 border border-slate-700 rounded px-1 py-1 text-indigo-400 font-bold disabled:opacity-40">
+            <select
+              disabled={!enableCompound}
+              value={compoundRate}
+              onChange={(e) => setCompoundRate(Number(e.target.value))}
+              className="bg-slate-900 border border-slate-700 rounded px-1 py-1 text-indigo-400 font-bold disabled:opacity-40"
+            >
               <option value={25}>25%</option>
               <option value={50}>50%</option>
               <option value={75}>75%</option>
@@ -922,44 +988,58 @@ export default function Home() {
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enablePartialTP} onChange={(e) => setEnablePartialTP(e.target.checked)} className="accent-amber-500 w-4 h-4 rounded" />
+              <input
+                type="checkbox"
+                checked={enablePartialTP}
+                onChange={(e) => setEnablePartialTP(e.target.checked)}
+                className="accent-amber-500 w-4 h-4 rounded"
+              />
               <span className="font-bold text-amber-400">Partial TP (50%)</span>
             </label>
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enableBreakEvenProtect} onChange={(e) => setEnableBreakEvenProtect(e.target.checked)} className="accent-blue-500 w-4 h-4 rounded" />
+              <input
+                type="checkbox"
+                checked={enableBreakEvenProtect}
+                onChange={(e) => setEnableBreakEvenProtect(e.target.checked)}
+                className="accent-blue-500 w-4 h-4 rounded"
+              />
               <span className="font-bold text-blue-400">Break-Even Guard</span>
             </label>
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enableAntiRug} onChange={(e) => setEnableAntiRug(e.target.checked)} className="accent-teal-500 w-4 h-4 rounded" />
+              <input
+                type="checkbox"
+                checked={enableAntiRug}
+                onChange={(e) => setEnableAntiRug(e.target.checked)}
+                className="accent-teal-500 w-4 h-4 rounded"
+              />
               <span className="font-bold text-teal-400">Anti-Rug Guard</span>
             </label>
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enableTimeExit} onChange={(e) => setEnableTimeExit(e.target.checked)} className="accent-orange-500 w-4 h-4 rounded" />
+              <input
+                type="checkbox"
+                checked={enableTimeExit}
+                onChange={(e) => setEnableTimeExit(e.target.checked)}
+                className="accent-orange-500 w-4 h-4 rounded"
+              />
               <span className="font-bold text-orange-400">Time Exit ({stagnantTimeLimitMinutes}m)</span>
             </label>
           </div>
 
-          {/* NEW TOGGLE: MULTI-DEX CONSENSUS */}
-          <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between col-span-1 sm:col-span-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={requireDexConsensus} onChange={(e) => setRequireDexConsensus(e.target.checked)} className="accent-purple-500 w-4 h-4 rounded" />
-              <span className="font-bold text-purple-400">Multi-DEX Consensus Required (&gt;= 2 DEX)</span>
-            </label>
-          </div>
         </div>
       </div>
 
       {/* MAIN DATA GRID */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        
         {/* NEW OPPORTUNITIES FEED */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-xs font-bold text-slate-300 mb-3 flex justify-between items-center">
@@ -977,9 +1057,9 @@ export default function Home() {
                         <span className="font-bold text-emerald-400 text-sm">${token.symbol}</span>
                         <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded">{token.dex}</span>
                       </div>
-                      <p className="text-[10px] text-slate-400 mt-0.5">Liq: ${token.liquidity.toLocaleString()} | Vol24h: ${token.volume24h.toLocaleString()}</p>
-                      <p className="text-[9px] text-slate-500">Top10 Hold: {token.topHolderPercent}% | Price: ${token.price}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Liq: ${token.liquidity.toLocaleString()} | Price: ${token.price}</p>
                     </div>
+
                     <div className="text-right">
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
                         token.opportunityScore >= 85 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-slate-800 text-slate-400'
@@ -1010,6 +1090,7 @@ export default function Home() {
                         <p className="font-bold text-slate-200 text-sm">${trade.symbol}</p>
                         <p className="text-[10px] text-slate-400">Size: ${trade.positionSizeUSD.toFixed(2)} | Entry: ${trade.entryPrice}</p>
                       </div>
+
                       <div className="text-right">
                         <p className={`text-xs font-bold ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}>
                           {isProfitable ? '+' : ''}{trade.pnlPercent}%
@@ -1038,6 +1119,7 @@ export default function Home() {
                 📊 Export CSV
               </button>
             </div>
+
             <div className="space-y-2 max-h-[330px] overflow-y-auto text-xs">
               {closedTrades.length === 0 ? (
                 <p className="text-xs text-slate-500">Belum ada riwayat transaksi ditutup...</p>
@@ -1059,6 +1141,7 @@ export default function Home() {
             </div>
           </div>
         </div>
+
       </div>
 
       {/* LOGS WITH SMART MONEY WALLET TRACKER */}
@@ -1085,6 +1168,7 @@ export default function Home() {
           </div>
         </div>
       </div>
+
     </div>
   );
 }
