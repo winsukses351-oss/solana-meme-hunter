@@ -16,6 +16,7 @@ export default function Home() {
   const [walletAddress, setWalletAddress] = useState('');
   const [isWalletConnected, setIsWalletConnected] = useState(false);
   const [realSolBalance, setRealSolBalance] = useState(0);
+  const [solPriceUSD, setSolPriceUSD] = useState(150); // Estimasi harga SOL/USD untuk konversi LIVE
 
   // 3. IN-APP NOTIFICATION SYSTEM
   const [notifications, setNotifications] = useState([]);
@@ -55,15 +56,19 @@ export default function Home() {
     }
   };
 
-  // 5. CAPITAL MANAGEMENT & COMPOUND SYSTEM
+  // 5. CAPITAL MANAGEMENT & PARAMETERS (RESTORED)
   const [balanceUSD, setBalanceUSD] = useState(10.0);
   const [initialCapital] = useState(10.0);
   const [equity, setEquity] = useState(10.0);
+  
+  // Parameter yang dikembalikan
   const [riskPercent, setRiskPercent] = useState(20);
   const [maxPositions, setMaxPositions] = useState(5);
   const [minLiquidityFilter, setMinLiquidityFilter] = useState(5000);
   const [minAiScoreFilter, setMinAiScoreFilter] = useState(80);
   const [stagnantTimeLimitMinutes, setStagnantTimeLimitMinutes] = useState(10);
+  const [slippage, setSlippage] = useState(1.0);
+  const [gasFeeUSD, setGasFeeUSD] = useState(0.02);
   const [autoPaused, setAutoPaused] = useState(false);
 
   // CONFIG ENGINE FEATURE TOGGLES (CHECKBOXES)
@@ -79,10 +84,6 @@ export default function Home() {
   const [enableBreakEvenProtect, setEnableBreakEvenProtect] = useState(true);
   const [enableAntiRug, setEnableAntiRug] = useState(true);
   const [enableTimeExit, setEnableTimeExit] = useState(true);
-
-  // COST ENGINE
-  const [slippage, setSlippage] = useState(1.0);
-  const [gasFeeUSD, setGasFeeUSD] = useState(0.02);
 
   // DATA STATES
   const [scannedTokens, setScannedTokens] = useState([]);
@@ -115,7 +116,7 @@ export default function Home() {
     localStorage.setItem('sh_rpc', rpcEndpoint);
   }, [balanceUSD, closedTrades, jupiterApiKey, rpcEndpoint]);
 
-  // WALLET CONNECTOR
+  // WALLET CONNECTOR & LIVE BALANCE SYNC
   const connectWallet = async () => {
     try {
       if (typeof window !== 'undefined' && window.solana) {
@@ -274,14 +275,16 @@ export default function Home() {
       return;
     }
 
-    if (balanceUSD < 0.5 && tradeMode === 'demo') return;
+    const currentActiveBalance = tradeMode === 'live' ? (realSolBalance * solPriceUSD) : balanceUSD;
+
+    if (currentActiveBalance < 0.5 && tradeMode === 'demo') return;
 
     let sizePercent = riskPercent;
     if (enableCompound && compoundRate > 0) {
       sizePercent = Math.min(100, riskPercent * (1 + compoundRate / 100));
     }
 
-    const positionSize = parseFloat((balanceUSD * (sizePercent / 100)).toFixed(2));
+    const positionSize = parseFloat((currentActiveBalance * (sizePercent / 100)).toFixed(2));
     const { totalCost } = calculateCosts(positionSize);
 
     const newTrade = {
@@ -299,7 +302,9 @@ export default function Home() {
       entryTimestamp: Date.now()
     };
 
-    setBalanceUSD((prev) => parseFloat((prev - positionSize).toFixed(2)));
+    if (tradeMode === 'demo') {
+      setBalanceUSD((prev) => parseFloat((prev - positionSize).toFixed(2)));
+    }
     setActiveTrades((prev) => [newTrade, ...prev]);
 
     triggerNotification(`🚀 OPEN BUY $${token.symbol}`, `Size: $${positionSize} | DEX: ${token.dex}`);
@@ -342,7 +347,9 @@ export default function Home() {
           let updatedPartiallyTaken = trade.partiallyTaken;
           if (enablePartialTP && !trade.partiallyTaken && enableTakeProfit && netPnlPercent >= (takeProfit / 2)) {
             const partialReturn = (currentPositionSize / 2) + (netPnlUSD / 2);
-            setBalanceUSD((prev) => parseFloat((prev + partialReturn).toFixed(2)));
+            if (tradeMode === 'demo') {
+              setBalanceUSD((prev) => parseFloat((prev + partialReturn).toFixed(2)));
+            }
             currentPositionSize = currentPositionSize / 2;
             updatedPartiallyTaken = true;
             addSystemLog(`[PARTIAL TP] $${trade.symbol} 50% Secured @ +${netPnlPercent}%`);
@@ -397,11 +404,13 @@ export default function Home() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [isRunning, activeTrades, takeProfit, stopLoss, trailingStop, enableTakeProfit, enableStopLoss, enableTrailingStop, enablePartialTP, enableBreakEvenProtect, enableTimeExit, stagnantTimeLimitMinutes, isEmergencyKilled]);
+  }, [isRunning, activeTrades, takeProfit, stopLoss, trailingStop, enableTakeProfit, enableStopLoss, enableTrailingStop, enablePartialTP, enableBreakEvenProtect, enableTimeExit, stagnantTimeLimitMinutes, isEmergencyKilled, tradeMode]);
 
   const closeTradePosition = (trade, netPnlUSD, netPnlPercent, reason) => {
     const returnAmount = Math.max(0, trade.positionSizeUSD + netPnlUSD);
-    setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
+    if (tradeMode === 'demo') {
+      setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
+    }
 
     const closedItem = {
       ...trade,
@@ -440,7 +449,8 @@ export default function Home() {
 
   useEffect(() => {
     const activePnL = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
-    const currentEquity = balanceUSD + activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0) + activePnL;
+    const currentBase = tradeMode === 'live' ? (realSolBalance * solPriceUSD) : balanceUSD;
+    const currentEquity = currentBase + activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0) + activePnL;
     const roundedEquity = parseFloat(currentEquity.toFixed(2));
     setEquity(roundedEquity);
 
@@ -452,7 +462,7 @@ export default function Home() {
       addSystemLog(`⚠️ [RISK GUARD] Max Drawdown (${drawdown.toFixed(1)}%) Reached! Bot Auto-Paused.`);
       triggerNotification('⚠️ RISK GUARD PAUSE', `Max Drawdown (${drawdown.toFixed(1)}%) terlampaui.`);
     }
-  }, [balanceUSD, activeTrades, initialCapital, autoPaused]);
+  }, [balanceUSD, activeTrades, initialCapital, autoPaused, tradeMode, realSolBalance, solPriceUSD]);
 
   useEffect(() => {
     let timer;
@@ -633,24 +643,37 @@ export default function Home() {
           <p className="text-[10px] text-slate-400">TRADING MODE</p>
           <div className="flex gap-1 mt-1">
             <button
-              onClick={() => setTradeMode('demo')}
+              onClick={() => {
+                setTradeMode('demo');
+                addSystemLog('🔄 [MODE] Switched to DEMO Mode');
+              }}
               className={`flex-1 py-0.5 text-[9px] font-bold rounded ${tradeMode === 'demo' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}
             >
               DEMO
             </button>
             <button
-              onClick={() => setTradeMode('live')}
-              className={`flex-1 py-0.5 text-[9px] font-bold rounded ${tradeMode === 'live' ? 'bg-rose-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}
+              onClick={() => {
+                setTradeMode('live');
+                addSystemLog('⚠️ [MODE] Switched to LIVE ON-CHAIN Mode');
+              }}
+              className={`flex-1 py-0.5 text-[9px] font-bold rounded ${tradeMode === 'live' ? 'bg-rose-500 text-white font-bold animate-pulse' : 'bg-slate-800 text-slate-400'}`}
             >
               LIVE
             </button>
           </div>
         </div>
 
+        {/* BACA SALDO REAL JIKA DARI MODE LIVE */}
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-          <p className="text-[10px] text-slate-400">BALANCE / EQUITY</p>
-          <p className="text-sm font-bold text-amber-400 mt-0.5">${balanceUSD.toFixed(2)}</p>
-          <p className="text-[10px] text-slate-500">Eq: ${equity.toFixed(2)}</p>
+          <p className="text-[10px] text-slate-400">
+            {tradeMode === 'live' ? 'LIVE SOL BALANCE' : 'DEMO BALANCE'}
+          </p>
+          <p className={`text-sm font-bold mt-0.5 ${tradeMode === 'live' ? 'text-purple-400' : 'text-amber-400'}`}>
+            {tradeMode === 'live' ? `${realSolBalance} SOL` : `$${balanceUSD.toFixed(2)}`}
+          </p>
+          <p className="text-[10px] text-slate-500">
+            Eq: ${equity.toFixed(2)}
+          </p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
@@ -677,7 +700,7 @@ export default function Home() {
           <p className="text-[10px] text-slate-400">POSITIONS / STATUS</p>
           <p className="text-sm font-bold text-emerald-400 mt-0.5">{activeTrades.length} / {maxPositions}</p>
           <span className={`text-[9px] font-bold ${isRunning ? 'text-emerald-400' : 'text-slate-500'}`}>
-            {isRunning ? '● HUNTING' : '○ IDLE'}
+            {isRunning ? (tradeMode === 'live' ? '⚡ LIVE HUNTING' : '● DEMO HUNTING') : '○ IDLE'}
           </span>
         </div>
       </div>
@@ -704,6 +727,74 @@ export default function Home() {
               value={rpcEndpoint}
               onChange={(e) => setRpcEndpoint(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-cyan-300 font-mono text-xs focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* RESTORED PANEL: TRADING PARAMETERS & FILTERS (LENGKAP SEPERTI AWAL) */}
+      <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
+        <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-3">🎛️ Risk, Filters &amp; Cost Parameters</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
+          <div>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Risk per Trade (%)</label>
+            <input
+              type="number"
+              value={riskPercent}
+              onChange={(e) => setRiskPercent(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-emerald-400 font-bold focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Min Liquidity ($)</label>
+            <input
+              type="number"
+              value={minLiquidityFilter}
+              onChange={(e) => setMinLiquidityFilter(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-cyan-400 font-bold focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Min AI Score Filter</label>
+            <input
+              type="number"
+              value={minAiScoreFilter}
+              onChange={(e) => setMinAiScoreFilter(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-amber-400 font-bold focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Max Concurrent Trades</label>
+            <input
+              type="number"
+              value={maxPositions}
+              onChange={(e) => setMaxPositions(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-indigo-400 font-bold focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Slippage Tolerance (%)</label>
+            <input
+              type="number"
+              step="0.1"
+              value={slippage}
+              onChange={(e) => setSlippage(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-rose-400 font-bold focus:outline-none focus:border-rose-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Gas Fee Est. ($)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={gasFeeUSD}
+              onChange={(e) => setGasFeeUSD(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-purple-400 font-bold focus:outline-none focus:border-purple-500"
             />
           </div>
         </div>
