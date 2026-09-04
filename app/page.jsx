@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 export default function Home() {
   // 1. ENGINE & SECURITY STATES
@@ -16,7 +16,7 @@ export default function Home() {
   const [walletAddress, setWalletAddress] = useState('');
   const [isWalletConnected, setIsWalletConnected] = useState(false);
   const [realSolBalance, setRealSolBalance] = useState(0);
-  const [solPriceUSD, setSolPriceUSD] = useState(150); // Estimasi harga SOL/USD untuk konversi LIVE
+  const [solPriceUSD, setSolPriceUSD] = useState(150);
 
   // 3. IN-APP NOTIFICATION SYSTEM
   const [notifications, setNotifications] = useState([]);
@@ -56,12 +56,11 @@ export default function Home() {
     }
   };
 
-  // 5. CAPITAL MANAGEMENT & PARAMETERS (RESTORED)
+  // 5. CAPITAL MANAGEMENT & PARAMETERS
   const [balanceUSD, setBalanceUSD] = useState(10.0);
   const [initialCapital] = useState(10.0);
   const [equity, setEquity] = useState(10.0);
   
-  // Parameter yang dikembalikan
   const [riskPercent, setRiskPercent] = useState(20);
   const [maxPositions, setMaxPositions] = useState(5);
   const [minLiquidityFilter, setMinLiquidityFilter] = useState(5000);
@@ -71,7 +70,7 @@ export default function Home() {
   const [gasFeeUSD, setGasFeeUSD] = useState(0.02);
   const [autoPaused, setAutoPaused] = useState(false);
 
-  // CONFIG ENGINE FEATURE TOGGLES (CHECKBOXES)
+  // CONFIG ENGINE FEATURE TOGGLES
   const [enableCompound, setEnableCompound] = useState(false);
   const [compoundRate, setCompoundRate] = useState(25);
   const [enableTakeProfit, setEnableTakeProfit] = useState(true);
@@ -96,6 +95,17 @@ export default function Home() {
 
   const blacklistKeywords = ['TEST', 'RUG', 'SCAM', 'HACK', 'FAKE', 'DRAIN'];
 
+  // REFS UNTUK MENGHINDARI MEMORY LEAK & RE-RENDER UNNECESSARY
+  const activeTradesRef = useRef(activeTrades);
+  const isRunningRef = useRef(isRunning);
+  const isEmergencyKilledRef = useRef(isEmergencyKilled);
+  const autoPausedRef = useRef(autoPaused);
+
+  useEffect(() => { activeTradesRef.current = activeTrades; }, [activeTrades]);
+  useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
+  useEffect(() => { isEmergencyKilledRef.current = isEmergencyKilled; }, [isEmergencyKilled]);
+  useEffect(() => { autoPausedRef.current = autoPaused; }, [autoPaused]);
+
   // PERSISTENCE
   useEffect(() => {
     const savedBalance = localStorage.getItem('sh_balanceUSD');
@@ -116,7 +126,7 @@ export default function Home() {
     localStorage.setItem('sh_rpc', rpcEndpoint);
   }, [balanceUSD, closedTrades, jupiterApiKey, rpcEndpoint]);
 
-  // WALLET CONNECTOR & LIVE BALANCE SYNC
+  // WALLET CONNECTOR
   const connectWallet = async () => {
     try {
       if (typeof window !== 'undefined' && window.solana) {
@@ -163,7 +173,6 @@ export default function Home() {
     addSystemLog('🔌 [WALLET] Disconnected');
   };
 
-  // PASSWORD START CHECK HANDLER
   const handleToggleEngine = () => {
     if (isRunning) {
       setIsRunning(false);
@@ -204,7 +213,7 @@ export default function Home() {
 
   // MARKET SCANNER
   const scanMarket = async () => {
-    if (isEmergencyKilled || autoPaused) return;
+    if (isEmergencyKilledRef.current || autoPausedRef.current) return;
 
     const dexSources = ['Pump.fun', 'Raydium', 'Meteora', 'Jupiter', 'DexScreener'];
     const mockSymbols = ['PUMP', 'BONK2', 'SOLDOGE', 'MOON', 'CATSOL', 'PEPEARMY', 'WIF2', 'BULL', 'NEO'];
@@ -262,7 +271,7 @@ export default function Home() {
     if (
       opportunityScore >= minAiScoreFilter &&
       liquidity >= minLiquidityFilter &&
-      activeTrades.length < maxPositions
+      activeTradesRef.current.length < maxPositions
     ) {
       executeAutoBuy(newToken);
     }
@@ -404,7 +413,7 @@ export default function Home() {
     }, 2000);
 
     return () => clearInterval(interval);
-  }, [isRunning, activeTrades, takeProfit, stopLoss, trailingStop, enableTakeProfit, enableStopLoss, enableTrailingStop, enablePartialTP, enableBreakEvenProtect, enableTimeExit, stagnantTimeLimitMinutes, isEmergencyKilled, tradeMode]);
+  }, [isRunning, activeTrades.length, takeProfit, stopLoss, trailingStop, enableTakeProfit, enableStopLoss, enableTrailingStop, enablePartialTP, enableBreakEvenProtect, enableTimeExit, stagnantTimeLimitMinutes, isEmergencyKilled, tradeMode]);
 
   const closeTradePosition = (trade, netPnlUSD, netPnlPercent, reason) => {
     const returnAmount = Math.max(0, trade.positionSizeUSD + netPnlUSD);
@@ -464,6 +473,7 @@ export default function Home() {
     }
   }, [balanceUSD, activeTrades, initialCapital, autoPaused, tradeMode, realSolBalance, solPriceUSD]);
 
+  // FIX LOOP SCANNER WITH CLEAN DEPENDENCIES
   useEffect(() => {
     let timer;
     if (isRunning && !isEmergencyKilled && !autoPaused) {
@@ -473,7 +483,7 @@ export default function Home() {
       }, 3000);
     }
     return () => clearInterval(timer);
-  }, [isRunning, isEmergencyKilled, autoPaused, activeTrades.length, maxPositions, riskPercent, enableCompound, compoundRate, minLiquidityFilter, minAiScoreFilter]);
+  }, [isRunning, isEmergencyKilled, autoPaused, maxPositions, riskPercent, enableCompound, compoundRate, minLiquidityFilter, minAiScoreFilter]);
 
   const addSystemLog = (msg) => setSystemLogs((prev) => [msg, ...prev.slice(0, 19)]);
   const addSmartMoneyLog = (msg) => setSmartMoneyLogs((prev) => [msg, ...prev.slice(0, 9)]);
@@ -543,7 +553,7 @@ export default function Home() {
         {notifications.map((n) => (
           <div
             key={n.id}
-            className="pointer-events-auto bg-slate-900/95 border-l-4 border-emerald-400 border-slate-800 p-3 rounded-lg shadow-xl backdrop-blur-md text-xs animate-slide-in"
+            className="pointer-events-auto bg-slate-900/95 border-l-4 border-emerald-400 border-slate-800 p-3 rounded-lg shadow-xl backdrop-blur-md text-xs"
           >
             <div className="flex justify-between items-center mb-1">
               <span className="font-bold text-emerald-400">{n.title}</span>
@@ -663,7 +673,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* BACA SALDO REAL JIKA DARI MODE LIVE */}
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
           <p className="text-[10px] text-slate-400">
             {tradeMode === 'live' ? 'LIVE SOL BALANCE' : 'DEMO BALANCE'}
@@ -732,7 +741,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* RESTORED PANEL: TRADING PARAMETERS & FILTERS (LENGKAP SEPERTI AWAL) */}
+      {/* PARAMETERS PANEL */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
         <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-3">🎛️ Risk, Filters &amp; Cost Parameters</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
@@ -823,7 +832,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* EQUITY TREND CHART (LINE CHART) */}
+      {/* EQUITY TREND CHART */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
         <h2 className="text-xs font-bold text-slate-300 mb-2">📈 Equity Curve Trend Line</h2>
         <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
@@ -831,23 +840,21 @@ export default function Home() {
         </div>
       </div>
 
-      {/* CONFIG ENGINE WITH CHECKBOX TOGGLES */}
+      {/* CONFIG ENGINE CHECKBOXES */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
         <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Config Engine (Features Toggle)</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
-            <div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableTakeProfit}
-                  onChange={(e) => setEnableTakeProfit(e.target.checked)}
-                  className="accent-emerald-500 w-4 h-4 rounded"
-                />
-                <span className="font-bold text-emerald-400">Take Profit (%)</span>
-              </label>
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableTakeProfit}
+                onChange={(e) => setEnableTakeProfit(e.target.checked)}
+                className="accent-emerald-500 w-4 h-4 rounded"
+              />
+              <span className="font-bold text-emerald-400">Take Profit (%)</span>
+            </label>
             <input
               type="number"
               disabled={!enableTakeProfit}
@@ -858,17 +865,15 @@ export default function Home() {
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
-            <div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableStopLoss}
-                  onChange={(e) => setEnableStopLoss(e.target.checked)}
-                  className="accent-rose-500 w-4 h-4 rounded"
-                />
-                <span className="font-bold text-rose-400">Stop Loss (%)</span>
-              </label>
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableStopLoss}
+                onChange={(e) => setEnableStopLoss(e.target.checked)}
+                className="accent-rose-500 w-4 h-4 rounded"
+              />
+              <span className="font-bold text-rose-400">Stop Loss (%)</span>
+            </label>
             <input
               type="number"
               disabled={!enableStopLoss}
@@ -879,17 +884,15 @@ export default function Home() {
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
-            <div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableTrailingStop}
-                  onChange={(e) => setEnableTrailingStop(e.target.checked)}
-                  className="accent-cyan-500 w-4 h-4 rounded"
-                />
-                <span className="font-bold text-cyan-400">Trailing Stop (%)</span>
-              </label>
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableTrailingStop}
+                onChange={(e) => setEnableTrailingStop(e.target.checked)}
+                className="accent-cyan-500 w-4 h-4 rounded"
+              />
+              <span className="font-bold text-cyan-400">Trailing Stop (%)</span>
+            </label>
             <input
               type="number"
               disabled={!enableTrailingStop}
@@ -900,17 +903,15 @@ export default function Home() {
           </div>
 
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
-            <div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={enableCompound}
-                  onChange={(e) => setEnableCompound(e.target.checked)}
-                  className="accent-indigo-500 w-4 h-4 rounded"
-                />
-                <span className="font-bold text-indigo-400">Compound Auto</span>
-              </label>
-            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableCompound}
+                onChange={(e) => setEnableCompound(e.target.checked)}
+                className="accent-indigo-500 w-4 h-4 rounded"
+              />
+              <span className="font-bold text-indigo-400">Compound Auto</span>
+            </label>
             <select
               disabled={!enableCompound}
               value={compoundRate}
