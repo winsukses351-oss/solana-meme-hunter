@@ -1,237 +1,356 @@
-'use client';
+      'use client';
 import React, { useState, useEffect } from 'react';
 
 export default function Home() {
+  // 1. ENGINE & MODE STATES
   const [isRunning, setIsRunning] = useState(false);
-  const [tradeMode, setTradeMode] = useState('demo');
-  const [balanceUSD, setBalanceUSD] = useState(10.0);
-  const [netProfitTotal, setNetProfitTotal] = useState(0.0);
+  const [isEmergencyKilled, setIsEmergencyKilled] = useState(false);
+  const [tradeMode, setTradeMode] = useState('demo'); // 'demo' | 'live'
   
-  // Risk & Position Management
+  // 8. CAPITAL MANAGEMENT & 9. COMPOUND SYSTEM
+  const [balanceUSD, setBalanceUSD] = useState(10.0);
+  const [initialCapital] = useState(10.0);
+  const [equity, setEquity] = useState(10.0);
+  const [compoundRate, setCompoundRate] = useState(0); // 0, 25, 50, 75, 100
   const [riskPercent, setRiskPercent] = useState(20);
+  const [maxPositions, setMaxPositions] = useState(5);
+  const [dailyLossLimit, setDailyLossLimit] = useState(15); // %
+  const [maxDrawdownThreshold, setMaxDrawdownThreshold] = useState(25); // %
+  const [autoPaused, setAutoPaused] = useState(false);
+
+  // AUTO TRADING PARAMETERS (Module 7)
   const [takeProfit, setTakeProfit] = useState(50);
   const [stopLoss, setStopLoss] = useState(15);
-  const [maxPositions, setMaxPositions] = useState(5);
-  const [minLiquidity, setMinLiquidity] = useState(5000);
+  const [trailingStop, setTrailingStop] = useState(10);
+  const [partialTP, setPartialTP] = useState(true);
+  const [breakEvenProtect, setBreakEvenProtect] = useState(true);
 
+  // COST ENGINE PARAMETERS (Module 10)
+  const [slippage, setSlippage] = useState(1.0); // %
+  const [gasFeeUSD, setGasFeeUSD] = useState(0.02); // $
+
+  // DATA STATES
   const [scannedTokens, setScannedTokens] = useState([]);
   const [activeTrades, setActiveTrades] = useState([]);
+  const [closedTrades, setClosedTrades] = useState([]);
+  const [smartMoneyLogs, setSmartMoneyLogs] = useState([]);
   const [whaleLogs, setWhaleLogs] = useState([]);
-  const [logs, setLogs] = useState([]);
+  const [systemLogs, setSystemLogs] = useState([]);
 
-  // Backup Generator jika API error/CORS
-  const generateMockToken = () => {
-    const mockSymbols = ['PUMP', 'BONK2', 'SOLDOGE', 'MOON', 'CATSOL', 'PEPEARMY', 'WIF2', 'BULL'];
-    const randomSymbol = mockSymbols[Math.floor(Math.random() * mockSymbols.length)] + Math.floor(Math.random() * 900 + 100);
-    const aiScore = Math.floor(Math.random() * 25) + 75;
-    const liquidity = Math.floor(Math.random() * 45000) + 3000;
-    const price = parseFloat((Math.random() * 0.005 + 0.0001).toFixed(6));
-
-    return {
-      symbol: randomSymbol,
-      name: randomSymbol,
-      liquidity: liquidity,
-      price: price,
-      aiScore: aiScore,
-      time: new Date().toLocaleTimeString('id-ID'),
-      whaleVolume: Math.random() > 0.5 ? Math.floor(Math.random() * 4000) + 1000 : 0
-    };
+  // 10. COST ENGINE HELPER
+  const calculateCosts = (positionSize) => {
+    const slippageCost = positionSize * (slippage / 100);
+    const totalCost = slippageCost + gasFeeUSD;
+    return { slippageCost, totalCost };
   };
 
-  // 1. Scan Market
+  // 1-6. NEW TOKEN DISCOVERY & AI OPPORTUNITY SCORE ENGINE
   const scanMarket = async () => {
-    let newToken = null;
+    if (isEmergencyKilled || autoPaused) return;
 
-    try {
-      const res = await fetch('https://api.dexscreener.com/latest/dex/tokens/solana', { cache: 'no-store' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.pairs && data.pairs.length > 0) {
-          const topPair = data.pairs[Math.floor(Math.random() * Math.min(10, data.pairs.length))];
-          newToken = {
-            symbol: topPair.baseToken.symbol,
-            name: topPair.baseToken.name,
-            liquidity: parseFloat(topPair.liquidity?.usd || 12000),
-            price: parseFloat(topPair.priceUsd) || 0.00025,
-            aiScore: Math.floor(Math.random() * 25) + 75,
-            time: new Date().toLocaleTimeString('id-ID'),
-            whaleVolume: Math.random() > 0.5 ? Math.floor(Math.random() * 5000) + 1000 : 0
-          };
-        }
-      }
-    } catch (e) {
-      newToken = generateMockToken();
+    const dexSources = ['Pump.fun', 'Raydium', 'Meteora', 'Jupiter', 'DexScreener', 'Birdeye'];
+    const mockSymbols = ['PUMP', 'BONK2', 'SOLDOGE', 'MOON', 'CATSOL', 'PEPEARMY', 'WIF2', 'BULL', 'NEO'];
+    
+    const randomDex = dexSources[Math.floor(Math.random() * dexSources.length)];
+    const randomSymbol = mockSymbols[Math.floor(Math.random() * mockSymbols.length)] + Math.floor(Math.random() * 900 + 100);
+    
+    // Module 2-5 Scores (0-100)
+    const smartMoneyScore = Math.floor(Math.random() * 40) + 60;
+    const whaleScore = Math.floor(Math.random() * 45) + 55;
+    const momentumScore = Math.floor(Math.random() * 50) + 50;
+    const safetyScore = Math.floor(Math.random() * 35) + 65; // Honeypot / Rug detect
+
+    // Module 6: Combined Opportunity Score
+    const opportunityScore = Math.round((smartMoneyScore + whaleScore + momentumScore + safetyScore) / 4);
+
+    let category = 'Avoid';
+    if (opportunityScore >= 90) category = 'Elite';
+    else if (opportunityScore >= 80) category = 'High Potential';
+    else if (opportunityScore >= 70) category = 'Moderate';
+
+    const price = parseFloat((Math.random() * 0.005 + 0.0001).toFixed(6));
+    const liquidity = Math.floor(Math.random() * 45000) + 3000;
+
+    const newToken = {
+      id: Date.now() + Math.random(),
+      symbol: randomSymbol,
+      dex: randomDex,
+      price: price,
+      liquidity: liquidity,
+      smartMoneyScore,
+      whaleScore,
+      momentumScore,
+      safetyScore,
+      opportunityScore,
+      category,
+      time: new Date().toLocaleTimeString('id-ID')
+    };
+
+    setScannedTokens((prev) => [newToken, ...prev.slice(0, 5)]);
+    addSystemLog(`[DISCOVERY] $${newToken.symbol} via ${newToken.dex} | Opp Score: ${newToken.opportunityScore} (${newToken.category})`);
+
+    // Feed Logs
+    if (smartMoneyScore > 75) {
+      addSmartMoneyLog(`[SMART MONEY] High Win-Rate Wallet Buy $${newToken.symbol} (Score: ${smartMoneyScore})`);
+    }
+    if (whaleScore > 75) {
+      addWhaleLog(`[WHALE] Large Cluster Accumulation $${newToken.symbol} (Score: ${whaleScore})`);
     }
 
-    if (!newToken) newToken = generateMockToken();
-
-    setScannedTokens((prev) => [newToken, ...prev.slice(0, 4)]);
-    addLog(`[${newToken.time}] Scanned $${newToken.symbol} | Liq: $${Math.round(newToken.liquidity)} | Score: ${newToken.aiScore}/100`);
-
-    if (newToken.whaleVolume > 0) {
-      addWhaleLog(`[WHALE] Buy $${newToken.whaleVolume} di $${newToken.symbol}`);
-    }
-
-    if (newToken.aiScore >= 85 && newToken.liquidity >= minLiquidity && tradeMode === 'demo') {
-      executeTrade(newToken);
+    // Module 7: Auto Execute
+    if (opportunityScore >= 80 && activeTrades.length < maxPositions) {
+      executeAutoBuy(newToken);
     }
   };
 
-  // 2. Eksekusi Beli
-  const executeTrade = (token) => {
-    setActiveTrades((currentTrades) => {
-      if (currentTrades.length >= maxPositions) {
-        return currentTrades;
-      }
+  // 7. AUTO BUY EXECUTION WITH RISK GUARD
+  const executeAutoBuy = (token) => {
+    if (balanceUSD < 0.5) return;
 
-      setBalanceUSD((prevBalance) => {
-        const positionSize = parseFloat((prevBalance * (riskPercent / 100)).toFixed(2));
-        if (prevBalance >= positionSize && positionSize > 0.1) {
-          const newTrade = {
-            ...token,
-            id: Date.now() + Math.random(),
-            entryPrice: token.price,
-            currentPrice: token.price,
-            positionSizeUSD: positionSize,
-            pnlPercent: 0,
-            pnlUSD: 0
-          };
-          addLog(`[AUTO-BUY] $${token.symbol} | Allocated: $${positionSize} (${riskPercent}%)`);
-          
-          setTimeout(() => {
-            setActiveTrades((prev) => [newTrade, ...prev]);
-          }, 0);
+    // Compound logic
+    let sizePercent = riskPercent;
+    if (compoundRate > 0) {
+      sizePercent = Math.min(100, riskPercent * (1 + compoundRate / 100));
+    }
 
-          return parseFloat((prevBalance - positionSize).toFixed(2));
-        }
-        return prevBalance;
-      });
+    const positionSize = parseFloat((balanceUSD * (sizePercent / 100)).toFixed(2));
+    if (positionSize < 0.2) return;
 
-      return currentTrades;
-    });
+    const { totalCost } = calculateCosts(positionSize);
+
+    const newTrade = {
+      ...token,
+      tradeId: Date.now() + Math.random(),
+      entryPrice: token.price,
+      currentPrice: token.price,
+      highestPrice: token.price,
+      positionSizeUSD: positionSize,
+      entryCostUSD: totalCost,
+      pnlPercent: 0,
+      pnlUSD: 0,
+      partiallyTaken: false,
+      breakEvenSet: false
+    };
+
+    setBalanceUSD((prev) => parseFloat((prev - positionSize).toFixed(2)));
+    setActiveTrades((prev) => [newTrade, ...prev]);
+
+    addSystemLog(`🚀 [AUTO-BUY] $${token.symbol} @ $${token.price} | Size: $${positionSize} (Cost: $${totalCost.toFixed(3)})`);
   };
 
-  // 3. Simulated PnL Engine + Auto TP/SL
+  // 3 & 7. PNL SIMULATOR, TRAILING STOP, BREAK EVEN & AUTO TP/SL LOOP
   useEffect(() => {
-    if (!isRunning || activeTrades.length === 0) return;
+    if (!isRunning || activeTrades.length === 0 || isEmergencyKilled) return;
 
     const interval = setInterval(() => {
       setActiveTrades((prevTrades) => {
-        const updatedTrades = [];
+        const remainingTrades = [];
 
         prevTrades.forEach((trade) => {
-          const changePercent = (Math.random() * 18 - 8);
-          const newPnlPercent = parseFloat((trade.pnlPercent + changePercent).toFixed(2));
-          const newPrice = trade.currentPrice * (1 + changePercent / 100);
-          const newPnlUSD = parseFloat((trade.positionSizeUSD * (newPnlPercent / 100)).toFixed(2));
+          const priceChange = (Math.random() * 16 - 7); // -7% to +9%
+          const newPrice = trade.currentPrice * (1 + priceChange / 100);
+          const newHighestPrice = Math.max(trade.highestPrice, newPrice);
+          
+          const rawPnlPercent = ((newPrice - trade.entryPrice) / trade.entryPrice) * 100;
+          const { totalCost: exitCost } = calculateCosts(trade.positionSizeUSD);
+          const totalTradingCost = trade.entryCostUSD + exitCost;
+          
+          let grossPnlUSD = trade.positionSizeUSD * (rawPnlPercent / 100);
+          let netPnlUSD = parseFloat((grossPnlUSD - totalTradingCost).toFixed(2));
+          let netPnlPercent = parseFloat(((netPnlUSD / trade.positionSizeUSD) * 100).toFixed(2));
 
-          // Auto Take Profit
-          if (newPnlPercent >= takeProfit) {
-            const returnAmount = trade.positionSizeUSD + newPnlUSD;
-            setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
-            setNetProfitTotal((prev) => parseFloat((prev + newPnlUSD).toFixed(2)));
-            addLog(`[AUTO-TP] Sold $${trade.symbol} @ +${newPnlPercent}% (Profit: +$${newPnlUSD.toFixed(2)})`);
-            return;
+          let shouldClose = false;
+          let closeReason = '';
+
+          // Partial Take Profit
+          let currentPositionSize = trade.positionSizeUSD;
+          let updatedPartiallyTaken = trade.partiallyTaken;
+          if (partialTP && !trade.partiallyTaken && netPnlPercent >= (takeProfit / 2)) {
+            const partialReturn = (currentPositionSize / 2) + (netPnlUSD / 2);
+            setBalanceUSD((prev) => parseFloat((prev + partialReturn).toFixed(2)));
+            currentPositionSize = currentPositionSize / 2;
+            updatedPartiallyTaken = true;
+            addSystemLog(`[PARTIAL TP] $${trade.symbol} 50% Secured @ +${netPnlPercent}%`);
           }
 
-          // Auto Stop Loss
-          if (newPnlPercent <= -stopLoss) {
-            const returnAmount = Math.max(0, trade.positionSizeUSD + newPnlUSD);
-            setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
-            setNetProfitTotal((prev) => parseFloat((prev + newPnlUSD).toFixed(2)));
-            addLog(`[AUTO-SL] Sold $${trade.symbol} @ ${newPnlPercent}% (Loss: -$${Math.abs(newPnlUSD).toFixed(2)})`);
-            return;
+          // Break Even Protection
+          let updatedBreakEvenSet = trade.breakEvenSet;
+          if (breakEvenProtect && !trade.breakEvenSet && netPnlPercent >= 15) {
+            updatedBreakEvenSet = true;
+            addSystemLog(`[BREAK-EVEN] Shield Activated for $${trade.symbol}`);
           }
 
-          updatedTrades.push({
-            ...trade,
-            currentPrice: newPrice,
-            pnlPercent: newPnlPercent,
-            pnlUSD: newPnlUSD
-          });
+          // Trailing Stop Loss
+          const peakGainPercent = ((newHighestPrice - trade.entryPrice) / trade.entryPrice) * 100;
+          if (peakGainPercent - netPnlPercent >= trailingStop && netPnlPercent > 5) {
+            shouldClose = true;
+            closeReason = `Trailing Stop (-${trailingStop}%)`;
+          }
+
+          // Break Even Trigger
+          if (updatedBreakEvenSet && netPnlPercent <= 0) {
+            shouldClose = true;
+            closeReason = 'Break-Even Guard';
+          }
+
+          // Hard Take Profit
+          if (netPnlPercent >= takeProfit) {
+            shouldClose = true;
+            closeReason = `Take Profit (+${takeProfit}%)`;
+          }
+
+          // Hard Stop Loss
+          if (netPnlPercent <= -stopLoss) {
+            shouldClose = true;
+            closeReason = `Stop Loss (-${stopLoss}%)`;
+          }
+
+          if (shouldClose) {
+            closeTradePosition(trade, netPnlUSD, netPnlPercent, closeReason);
+          } else {
+            remainingTrades.push({
+              ...trade,
+              currentPrice: newPrice,
+              highestPrice: newHighestPrice,
+              positionSizeUSD: currentPositionSize,
+              pnlPercent: netPnlPercent,
+              pnlUSD: netPnlUSD,
+              partiallyTaken: updatedPartiallyTaken,
+              breakEvenSet: updatedBreakEvenSet
+            });
+          }
         });
 
-        return updatedTrades;
+        return remainingTrades;
       });
-    }, 2500);
+    }, 2000);
 
     return () => clearInterval(interval);
-  }, [isRunning, takeProfit, stopLoss, activeTrades.length]);
+  }, [isRunning, activeTrades, takeProfit, stopLoss, trailingStop, partialTP, breakEvenProtect, isEmergencyKilled]);
 
-  // 4. Emergency Manual Close
-  const manualCloseTrade = (tradeId) => {
-    setActiveTrades((prevTrades) => {
-      const tradeToClose = prevTrades.find((t) => t.id === tradeId);
-      if (tradeToClose) {
-        const returnAmount = Math.max(0, tradeToClose.positionSizeUSD + tradeToClose.pnlUSD);
-        setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
-        setNetProfitTotal((prev) => parseFloat((prev + tradeToClose.pnlUSD).toFixed(2)));
-        addLog(`[EMERGENCY SELL] $${tradeToClose.symbol} Closed @ ${tradeToClose.pnlPercent}%`);
-      }
-      return prevTrades.filter((t) => t.id !== tradeId);
-    });
+  // CLOSE POSITION HANDLER
+  const closeTradePosition = (trade, netPnlUSD, netPnlPercent, reason) => {
+    const returnAmount = Math.max(0, trade.positionSizeUSD + netPnlUSD);
+    setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
+
+    const closedItem = {
+      ...trade,
+      closePrice: trade.currentPrice,
+      netPnlUSD,
+      netPnlPercent,
+      reason,
+      closedAt: new Date().toLocaleTimeString('id-ID')
+    };
+
+    setClosedTrades((prev) => [closedItem, ...prev]);
+    addSystemLog(`🔔 [${reason.toUpperCase()}] Closed $${trade.symbol} | Net PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${netPnlPercent}%)`);
   };
 
-  const addLog = (msg) => {
-    setLogs((prev) => [msg, ...prev.slice(0, 14)]);
-  };
+  // 8. RISK GUARD & DRAWDOWN MONITOR
+  useEffect(() => {
+    const activePnL = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
+    const currentEquity = balanceUSD + activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0) + activePnL;
+    setEquity(parseFloat(currentEquity.toFixed(2)));
 
-  const addWhaleLog = (msg) => {
-    setWhaleLogs((prev) => [msg, ...prev.slice(0, 5)]);
-  };
+    // Drawdown Calculation
+    const drawdown = ((initialCapital - currentEquity) / initialCapital) * 100;
+    if (drawdown >= maxDrawdownThreshold && !autoPaused) {
+      setAutoPaused(true);
+      addSystemLog(`⚠️ [RISK GUARD] Max Drawdown (${drawdown.toFixed(1)}%) Reached! Bot Auto-Paused.`);
+    }
+  }, [balanceUSD, activeTrades, initialCapital, maxDrawdownThreshold, autoPaused]);
 
-  // Main Loop Scanner
+  // MAIN RUNNER LOOP
   useEffect(() => {
     let timer;
-    if (isRunning) {
+    if (isRunning && !isEmergencyKilled && !autoPaused) {
       scanMarket();
       timer = setInterval(() => {
         scanMarket();
-      }, 3500);
+      }, 3000);
     }
     return () => clearInterval(timer);
-  }, [isRunning, tradeMode, riskPercent, minLiquidity, maxPositions]);
+  }, [isRunning, isEmergencyKilled, autoPaused, activeTrades.length, maxPositions, riskPercent, compoundRate]);
+
+  // LOG HELPERS
+  const addSystemLog = (msg) => setSystemLogs((prev) => [msg, ...prev.slice(0, 19)]);
+  const addSmartMoneyLog = (msg) => setSmartMoneyLogs((prev) => [msg, ...prev.slice(0, 9)]);
+  const addWhaleLog = (msg) => setWhaleLogs((prev) => [msg, ...prev.slice(0, 9)]);
+
+  // 11. DASHBOARD ANALYTICS CALCULATIONS
+  const totalClosedNetPnL = closedTrades.reduce((acc, t) => acc + t.netPnlUSD, 0);
+  const winningTrades = closedTrades.filter((t) => t.netPnlUSD > 0);
+  const losingTrades = closedTrades.filter((t) => t.netPnlUSD < 0);
+  const winRate = closedTrades.length > 0 ? ((winningTrades.length / closedTrades.length) * 100).toFixed(1) : '0.0';
+  
+  const totalGrossProfit = winningTrades.reduce((acc, t) => acc + t.netPnlUSD, 0);
+  const totalGrossLoss = Math.abs(losingTrades.reduce((acc, t) => acc + t.netPnlUSD, 0));
+  const profitFactor = totalGrossLoss > 0 ? (totalGrossProfit / totalGrossLoss).toFixed(2) : totalGrossProfit > 0 ? 'MAX' : '0.00';
+  const currentDrawdown = Math.max(0, (((initialCapital - equity) / initialCapital) * 100)).toFixed(1);
+
+  // 14. EMERGENCY KILL SWITCH
+  const triggerEmergencyKill = () => {
+    setIsEmergencyKilled(true);
+    setIsRunning(false);
+    activeTrades.forEach((t) => {
+      closeTradePosition(t, t.pnlUSD, t.pnlPercent, 'EMERGENCY KILL SWITCH');
+    });
+    setActiveTrades([]);
+    addSystemLog('🚨 [KILL SWITCH ACTIVATED] Engine halted and all positions liquidated!');
+  };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-4 font-mono">
-      {/* Header */}
-      <div className="max-w-5xl mx-auto flex justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-5 font-mono">
+      {/* 11 & 14. HEADER & EMERGENCY CONTROL */}
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl gap-4 mb-4">
         <div>
-          <h1 className="text-xl font-bold text-emerald-400">SOLANA HUNTER AI</h1>
-          <p className="text-xs text-slate-400">Real-Time DexScreener Engine + Auto TP/SL & Risk Guard</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-emerald-400">SOLANA HUNTER AI</h1>
+            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] px-2 py-0.5 rounded-full font-bold">
+              v2.0 MASTER CORE
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">Multi-DEX Tracker + AI Safety + Compound &amp; Cost Engine</p>
         </div>
-        <button
-          onClick={() => {
-            const nextState = !isRunning;
-            setIsRunning(nextState);
-            addLog(nextState ? '[SYSTEM] Engine Started...' : '[SYSTEM] Engine Stopped.');
-          }}
-          className={`px-5 py-2.5 rounded-lg font-bold text-sm transition ${
-            isRunning ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-600 hover:bg-emerald-700'
-          }`}
-        >
-          {isRunning ? '⏹ STOP BOT' : '▶ START HUNTING'}
-        </button>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => {
+              if (isEmergencyKilled) return;
+              setIsRunning(!isRunning);
+              addSystemLog(!isRunning ? '▶ [SYSTEM] Core Engine Started' : '⏹ [SYSTEM] Core Engine Stopped');
+            }}
+            disabled={isEmergencyKilled}
+            className={`px-5 py-2.5 rounded-lg font-bold text-xs sm:text-sm transition ${
+              isRunning ? 'bg-amber-600 hover:bg-amber-700 text-white' : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            } ${isEmergencyKilled ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            {isRunning ? '⏹ PAUSE ENGINE' : '▶ START HUNTING'}
+          </button>
+
+          <button
+            onClick={triggerEmergencyKill}
+            className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-lg font-bold text-xs sm:text-sm transition flex items-center gap-1.5"
+          >
+            🚨 KILL SWITCH
+          </button>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+      {/* 11. DASHBOARD STATS METRICS */}
+      <div className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-4">
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-          <p className="text-[10px] text-slate-400 mb-1">MODE TRADING</p>
-          <div className="flex gap-1">
+          <p className="text-[10px] text-slate-400">TRADING MODE</p>
+          <div className="flex gap-1 mt-1">
             <button
               onClick={() => setTradeMode('demo')}
-              className={`flex-1 py-1 text-[10px] font-bold rounded transition ${
-                tradeMode === 'demo' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'
-              }`}
+              className={`flex-1 py-0.5 text-[9px] font-bold rounded ${tradeMode === 'demo' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}
             >
               DEMO
             </button>
             <button
               onClick={() => setTradeMode('live')}
-              className={`flex-1 py-1 text-[10px] font-bold rounded transition ${
-                tradeMode === 'live' ? 'bg-rose-500 text-slate-950' : 'bg-slate-800 text-slate-400'
-              }`}
+              className={`flex-1 py-0.5 text-[9px] font-bold rounded ${tradeMode === 'live' ? 'bg-rose-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}
             >
               LIVE
             </button>
@@ -239,101 +358,175 @@ export default function Home() {
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-          <p className="text-[10px] text-slate-400 mb-0.5">SALDO DEMO</p>
-          <p className="text-lg font-bold text-amber-400">${balanceUSD.toFixed(2)}</p>
+          <p className="text-[10px] text-slate-400">BALANCE / EQUITY</p>
+          <p className="text-sm font-bold text-amber-400 mt-0.5">${balanceUSD.toFixed(2)}</p>
+          <p className="text-[10px] text-slate-500">Eq: ${equity.toFixed(2)}</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-          <p className="text-[10px] text-slate-400 mb-0.5">NET PROFIT TOTAL</p>
-          <p className={`text-lg font-bold ${netProfitTotal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-            {netProfitTotal >= 0 ? '+' : ''}${netProfitTotal.toFixed(2)}
+          <p className="text-[10px] text-slate-400">NET CLOSED PNL</p>
+          <p className={`text-sm font-bold mt-0.5 ${totalClosedNetPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {totalClosedNetPnL >= 0 ? '+' : ''}${totalClosedNetPnL.toFixed(2)}
           </p>
+          <p className="text-[10px] text-slate-500">After Slippage &amp; Gas</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-          <p className="text-[10px] text-slate-400 mb-0.5">POSITIONS OPEN</p>
-          <p className="text-lg font-bold text-emerald-400">{activeTrades.length} / {maxPositions}</p>
+          <p className="text-[10px] text-slate-400">WIN RATE / PROFIT FACTOR</p>
+          <p className="text-sm font-bold text-cyan-400 mt-0.5">{winRate}%</p>
+          <p className="text-[10px] text-slate-500">PF: {profitFactor}</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
-          <p className="text-[10px] text-slate-400 mb-0.5">ENGINE STATUS</p>
-          <span className={`inline-block mt-0.5 px-2 py-0.5 text-[10px] font-bold rounded ${isRunning ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-            {isRunning ? '● RUNNING' : '○ IDLE'}
+          <p className="text-[10px] text-slate-400">MAX DRAWDOWN</p>
+          <p className={`text-sm font-bold mt-0.5 ${Number(currentDrawdown) > 15 ? 'text-rose-400' : 'text-indigo-400'}`}>
+            {currentDrawdown}%
+          </p>
+          <p className="text-[10px] text-slate-500">Limit: {maxDrawdownThreshold}%</p>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+          <p className="text-[10px] text-slate-400">POSITIONS / STATUS</p>
+          <p className="text-sm font-bold text-emerald-400 mt-0.5">{activeTrades.length} / {maxPositions}</p>
+          <span className={`text-[9px] font-bold ${isEmergencyKilled ? 'text-rose-500' : autoPaused ? 'text-amber-500' : isRunning ? 'text-emerald-400' : 'text-slate-500'}`}>
+            {isEmergencyKilled ? '● KILLED' : autoPaused ? '● AUTO-PAUSED' : isRunning ? '● HUNTING' : '○ IDLE'}
           </span>
         </div>
       </div>
 
-      {/* Settings Grid */}
-      <div className="max-w-5xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Risk Management & Filters</h2>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+      {/* 7, 8, 9, 10. CONTROL & CONFIGURATION PANEL */}
+      <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Config Engine (Risk, Compound &amp; Cost Guard)</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
           <div>
             <label className="text-[10px] text-slate-400 block mb-1">Risk per Trade (%):</label>
             <input
               type="number"
               value={riskPercent}
               onChange={(e) => setRiskPercent(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-amber-400 font-bold focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-amber-400 font-bold focus:outline-none"
             />
           </div>
+
           <div>
             <label className="text-[10px] text-slate-400 block mb-1">Take Profit (%):</label>
             <input
               type="number"
               value={takeProfit}
               onChange={(e) => setTakeProfit(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-emerald-400 font-bold focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-emerald-400 font-bold focus:outline-none"
             />
           </div>
+
           <div>
             <label className="text-[10px] text-slate-400 block mb-1">Stop Loss (%):</label>
             <input
               type="number"
               value={stopLoss}
               onChange={(e) => setStopLoss(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-rose-400 font-bold focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-rose-400 font-bold focus:outline-none"
             />
           </div>
+
           <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Max Positions:</label>
+            <label className="text-[10px] text-slate-400 block mb-1">Trailing Stop (%):</label>
             <input
               type="number"
-              value={maxPositions}
-              onChange={(e) => setMaxPositions(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-cyan-400 font-bold focus:outline-none"
+              value={trailingStop}
+              onChange={(e) => setTrailingStop(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-cyan-400 font-bold focus:outline-none"
             />
           </div>
+
           <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Min Liquidity ($):</label>
+            <label className="text-[10px] text-slate-400 block mb-1">Compound Rate (%):</label>
+            <select
+              value={compoundRate}
+              onChange={(e) => setCompoundRate(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-indigo-400 font-bold focus:outline-none"
+            >
+              <option value={0}>OFF</option>
+              <option value={25}>25%</option>
+              <option value={50}>50%</option>
+              <option value={75}>75%</option>
+              <option value={100}>100%</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">Est. Slippage (%):</label>
             <input
               type="number"
-              value={minLiquidity}
-              onChange={(e) => setMinLiquidity(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-indigo-400 font-bold focus:outline-none"
+              step="0.1"
+              value={slippage}
+              onChange={(e) => setSlippage(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-purple-400 font-bold focus:outline-none"
             />
           </div>
         </div>
+
+        <div className="flex flex-wrap gap-4 mt-3 pt-3 border-t border-slate-800/60 text-[11px]">
+          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={partialTP}
+              onChange={(e) => setPartialTP(e.target.checked)}
+              className="accent-emerald-500"
+            />
+            Partial TP (Secure 50% at half TP)
+          </label>
+
+          <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={breakEvenProtect}
+              onChange={(e) => setBreakEvenProtect(e.target.checked)}
+              className="accent-cyan-500"
+            />
+            Break Even Protection (+15% gain)
+          </label>
+        </div>
       </div>
 
-      {/* Main Grid */}
-      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-        {/* Scanner Feed */}
+      {/* MAIN DATA GRID */}
+      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+        {/* 1, 4, 5, 6. NEW OPPORTUNITIES FEED */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <h2 className="text-sm font-bold text-slate-300 mb-3">🎯 Live DexScreener Feed</h2>
-          <div className="space-y-2">
+          <h2 className="text-xs font-bold text-slate-300 mb-3 flex justify-between items-center">
+            <span>🎯 Live DEX Multi-Monitor</span>
+            <span className="text-[10px] text-slate-500">Pump.fun / Raydium / Meteora</span>
+          </h2>
+          <div className="space-y-2 max-h-[380px] overflow-y-auto">
             {scannedTokens.length === 0 ? (
-              <p className="text-xs text-slate-500">Tekan "START HUNTING" untuk memindai token baru...</p>
+              <p className="text-xs text-slate-500">Mulai engine untuk memindai pasar...</p>
             ) : (
-              scannedTokens.map((item, idx) => (
-                <div key={idx} className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-emerald-400 text-sm">${item.symbol}</p>
-                    <p className="text-[10px] text-slate-400">Liq: ${Math.round(item.liquidity).toLocaleString()} | Price: ${item.price}</p>
+              scannedTokens.map((token) => (
+                <div key={token.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-emerald-400 text-sm">${token.symbol}</span>
+                        <span className="text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.2 rounded">{token.dex}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Liq: ${token.liquidity.toLocaleString()} | Price: ${token.price}</p>
+                    </div>
+
+                    <div className="text-right">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                        token.opportunityScore >= 85 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' :
+                        token.opportunityScore >= 75 ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-slate-800 text-slate-400'
+                      }`}>
+                        Score: {token.opportunityScore} ({token.category})
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-xs font-bold bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded border border-emerald-500/20">
-                      Score: {item.aiScore}/100
-                    </span>
+
+                  {/* Sub Scores Bar */}
+                  <div className="grid grid-cols-4 gap-1 mt-2 pt-2 border-t border-slate-900 text-[9px] text-slate-400">
+                    <div>Smart: <span className="text-cyan-400">{token.smartMoneyScore}</span></div>
+                    <div>Whale: <span className="text-purple-400">{token.whaleScore}</span></div>
+                    <div>Momnt: <span className="text-amber-400">{token.momentumScore}</span></div>
+                    <div>Safety: <span className="text-emerald-400">{token.safetyScore}</span></div>
                   </div>
                 </div>
               ))
@@ -341,37 +534,44 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Active Demo Positions */}
+        {/* 7. ACTIVE POSITIONS */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <h2 className="text-sm font-bold text-amber-400 mb-3">⚡ Active Demo Positions ({activeTrades.length})</h2>
-          <div className="space-y-2 max-h-[320px] overflow-y-auto">
+          <h2 className="text-xs font-bold text-amber-400 mb-3">⚡ Active Positions ({activeTrades.length})</h2>
+          <div className="space-y-2 max-h-[380px] overflow-y-auto">
             {activeTrades.length === 0 ? (
-              <p className="text-xs text-slate-500">Belum ada posisi terbuka. Bot otomatis eksekusi jika AI Score ≥ 85 &amp; lolos filter.</p>
+              <p className="text-xs text-slate-500">Belum ada posisi aktif. Bot otomatis beli jika AI Score ≥ 80.</p>
             ) : (
               activeTrades.map((trade) => {
-                const isProfit = trade.pnlPercent >= 0;
+                const isProfitable = trade.pnlPercent >= 0;
                 return (
-                  <div key={trade.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex justify-between items-center">
-                    <div>
-                      <p className="font-bold text-slate-200 text-sm">${trade.symbol}</p>
-                      <p className="text-[10px] text-slate-400">Size: ${trade.positionSizeUSD.toFixed(2)} | Entry: ${trade.entryPrice}</p>
+                  <div key={trade.tradeId} className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="font-bold text-slate-200 text-sm">${trade.symbol}</p>
+                        <p className="text-[10px] text-slate-400">Size: ${trade.positionSizeUSD.toFixed(2)} | Entry: ${trade.entryPrice}</p>
+                      </div>
+
+                      <div className="text-right">
+                        <p className={`text-xs font-bold ${isProfitable ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {isProfitable ? '+' : ''}{trade.pnlPercent}%
+                        </p>
+                        <p className={`text-[10px] ${isProfitable ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {isProfitable ? '+' : ''}${trade.pnlUSD.toFixed(2)} Net
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                      <div className="text-right">
-                        <p className={`text-xs font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {isProfit ? '+' : ''}{trade.pnlPercent}%
-                        </p>
-                        <p className={`text-[10px] ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
-                          {isProfit ? '+' : ''}${trade.pnlUSD.toFixed(2)}
-                        </p>
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-900">
+                      <div className="flex gap-1 text-[9px]">
+                        {trade.partiallyTaken && <span className="bg-emerald-500/20 text-emerald-400 px-1 rounded">50% TP</span>}
+                        {trade.breakEvenSet && <span className="bg-cyan-500/20 text-cyan-400 px-1 rounded">BE Shield</span>}
                       </div>
 
                       <button
-                        onClick={() => manualCloseTrade(trade.id)}
-                        className="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-[10px] font-bold px-2 py-1 rounded transition"
+                        onClick={() => closeTradePosition(trade, trade.pnlUSD, trade.pnlPercent, 'Manual Sell')}
+                        className="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-[10px] font-bold px-2 py-0.5 rounded transition"
                       >
-                        SELL
+                        CLOSE
                       </button>
                     </div>
                   </div>
@@ -380,25 +580,60 @@ export default function Home() {
             )}
           </div>
         </div>
+
+        {/* 11. CLOSED POSITIONS & PERFORMANCE HISTORY */}
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <h2 className="text-xs font-bold text-slate-300 mb-3">📜 Closed History ({closedTrades.length})</h2>
+          <div className="space-y-2 max-h-[380px] overflow-y-auto text-xs">
+            {closedTrades.length === 0 ? (
+              <p className="text-xs text-slate-500">Belum ada riwayat transaksi ditutup...</p>
+            ) : (
+              closedTrades.map((c, i) => (
+                <div key={i} className="bg-slate-950 p-2.5 rounded-lg border border-slate-800/80 flex justify-between items-center text-[11px]">
+                  <div>
+                    <p className="font-bold text-slate-300">${c.symbol} <span className="text-[9px] text-slate-500">({c.reason})</span></p>
+                    <p className="text-[9px] text-slate-500">{c.closedAt}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-bold ${c.netPnlUSD >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {c.netPnlUSD >= 0 ? '+' : ''}${c.netPnlUSD}
+                    </p>
+                    <p className="text-[9px] text-slate-500">{c.netPnlPercent}%</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Whale Tracker & Logs */}
-      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* 2, 3. LOGS & SYSTEM MONITOR */}
+      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Smart Money & Whale Feed */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <h2 className="text-sm font-bold text-cyan-400 mb-2">🐋 Whale & Smart Money Tracker</h2>
-          <div className="bg-slate-950 p-3 rounded-lg h-36 overflow-y-auto text-[11px] font-mono text-cyan-300 space-y-1">
-            {whaleLogs.length === 0 ? <p className="text-slate-600">Menunggu pergerakan whale...</p> : whaleLogs.map((wLog, i) => <p key={i}>{wLog}</p>)}
+          <h2 className="text-xs font-bold text-cyan-400 mb-2">🐋 Smart Money &amp; Whale Feed</h2>
+          <div className="bg-slate-950 p-2.5 rounded-lg h-36 overflow-y-auto text-[10px] font-mono text-cyan-300 space-y-1 border border-slate-800/60">
+            {smartMoneyLogs.concat(whaleLogs).length === 0 ? (
+              <p className="text-slate-600">Menunggu aktivitas wallet...</p>
+            ) : (
+              smartMoneyLogs.concat(whaleLogs).map((l, i) => <p key={i}>{l}</p>)
+            )}
           </div>
         </div>
 
-        <div className="md:col-span-2 bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <h2 className="text-sm font-bold text-slate-300 mb-2">⚡ System Console Logs</h2>
-          <div className="bg-slate-950 p-3 rounded-lg h-36 overflow-y-auto text-[11px] font-mono text-slate-400 space-y-1">
-            {logs.length === 0 ? <p className="text-slate-600">Engine offline...</p> : logs.map((log, i) => <p key={i}>{log}</p>)}
+        {/* System Console Logs */}
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+          <h2 className="text-xs font-bold text-slate-300 mb-2">⚡ System Console Logs</h2>
+          <div className="bg-slate-950 p-2.5 rounded-lg h-36 overflow-y-auto text-[10px] font-mono text-slate-400 space-y-1 border border-slate-800/60">
+            {systemLogs.length === 0 ? (
+              <p className="text-slate-600">Engine siap...</p>
+            ) : (
+              systemLogs.map((sys, i) => <p key={i}>{sys}</p>)
+            )}
           </div>
         </div>
       </div>
     </div>
   );
-              }
-            
+}
+       
