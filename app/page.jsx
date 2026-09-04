@@ -5,6 +5,7 @@ export default function Home() {
   const [isRunning, setIsRunning] = useState(false);
   const [tradeMode, setTradeMode] = useState('demo');
   const [balanceUSD, setBalanceUSD] = useState(10.0);
+  const [netProfitTotal, setNetProfitTotal] = useState(0.0);
   
   // Risk & Position Management
   const [riskPercent, setRiskPercent] = useState(20);
@@ -128,6 +129,7 @@ export default function Home() {
           if (newPnlPercent >= takeProfit) {
             const returnAmount = trade.positionSizeUSD + newPnlUSD;
             setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
+            setNetProfitTotal((prev) => parseFloat((prev + newPnlUSD).toFixed(2)));
             addLog(`[AUTO-TP] Sold $${trade.symbol} @ +${newPnlPercent}% (Profit: +$${newPnlUSD.toFixed(2)})`);
             return;
           }
@@ -136,6 +138,7 @@ export default function Home() {
           if (newPnlPercent <= -stopLoss) {
             const returnAmount = Math.max(0, trade.positionSizeUSD + newPnlUSD);
             setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
+            setNetProfitTotal((prev) => parseFloat((prev + newPnlUSD).toFixed(2)));
             addLog(`[AUTO-SL] Sold $${trade.symbol} @ ${newPnlPercent}% (Loss: -$${Math.abs(newPnlUSD).toFixed(2)})`);
             return;
           }
@@ -162,6 +165,7 @@ export default function Home() {
       if (tradeToClose) {
         const returnAmount = Math.max(0, tradeToClose.positionSizeUSD + tradeToClose.pnlUSD);
         setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
+        setNetProfitTotal((prev) => parseFloat((prev + tradeToClose.pnlUSD).toFixed(2)));
         addLog(`[EMERGENCY SELL] $${tradeToClose.symbol} Closed @ ${tradeToClose.pnlPercent}%`);
       }
       return prevTrades.filter((t) => t.id !== tradeId);
@@ -211,21 +215,21 @@ export default function Home() {
       </div>
 
       {/* Stats */}
-      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p className="text-xs text-slate-400 mb-2">MODE TRADING</p>
-          <div className="flex gap-2">
+      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+        <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+          <p className="text-[10px] text-slate-400 mb-1">MODE TRADING</p>
+          <div className="flex gap-1">
             <button
               onClick={() => setTradeMode('demo')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded transition ${
+              className={`flex-1 py-1 text-[10px] font-bold rounded transition ${
                 tradeMode === 'demo' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400'
               }`}
             >
-              DEMO (PAPER)
+              DEMO
             </button>
             <button
               onClick={() => setTradeMode('live')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded transition ${
+              className={`flex-1 py-1 text-[10px] font-bold rounded transition ${
                 tradeMode === 'live' ? 'bg-rose-500 text-slate-950' : 'bg-slate-800 text-slate-400'
               }`}
             >
@@ -234,19 +238,26 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p className="text-xs text-slate-400 mb-1">SALDO DEMO (VIRTUAL)</p>
-          <p className="text-2xl font-bold text-amber-400">${balanceUSD.toFixed(2)}</p>
+        <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+          <p className="text-[10px] text-slate-400 mb-0.5">SALDO DEMO</p>
+          <p className="text-lg font-bold text-amber-400">${balanceUSD.toFixed(2)}</p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p className="text-xs text-slate-400 mb-1">POSITIONS OPEN</p>
-          <p className="text-2xl font-bold text-emerald-400">{activeTrades.length} / {maxPositions}</p>
+        <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+          <p className="text-[10px] text-slate-400 mb-0.5">NET PROFIT TOTAL</p>
+          <p className={`text-lg font-bold ${netProfitTotal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            {netProfitTotal >= 0 ? '+' : ''}${netProfitTotal.toFixed(2)}
+          </p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <p className="text-xs text-slate-400 mb-1">ENGINE STATUS</p>
-          <span className={`inline-block mt-1 px-2.5 py-1 text-xs font-bold rounded ${isRunning ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+        <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+          <p className="text-[10px] text-slate-400 mb-0.5">POSITIONS OPEN</p>
+          <p className="text-lg font-bold text-emerald-400">{activeTrades.length} / {maxPositions}</p>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
+          <p className="text-[10px] text-slate-400 mb-0.5">ENGINE STATUS</p>
+          <span className={`inline-block mt-0.5 px-2 py-0.5 text-[10px] font-bold rounded ${isRunning ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
             {isRunning ? '● RUNNING' : '○ IDLE'}
           </span>
         </div>
@@ -389,5 +400,5 @@ export default function Home() {
       </div>
     </div>
   );
-            }
-                    
+    }
+    
