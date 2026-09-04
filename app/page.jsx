@@ -10,7 +10,7 @@ export default function Home() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const MASTER_PASSWORD = 'erwinirawan1234567890';
 
-  // 2. SOLANA WEB3 & WALLET STATES
+  // 2. SOLANA WEB3 & JUPITER API STATES
   const [rpcEndpoint, setRpcEndpoint] = useState('https://api.mainnet-beta.solana.com');
   const [jupiterApiKey, setJupiterApiKey] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
@@ -25,7 +25,6 @@ export default function Home() {
     setNotifications((prev) => [{ id, title, message }, ...prev.slice(0, 4)]);
     playTingSound();
 
-    // Auto dismiss after 4 seconds
     setTimeout(() => {
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     }, 4000);
@@ -41,7 +40,7 @@ export default function Home() {
       const gain = ctx.createGain();
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(1200, ctx.currentTime); // High pitched "Ting"
+      osc.frequency.setValueAtTime(1200, ctx.currentTime);
 
       gain.gain.setValueAtTime(0.15, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
@@ -193,7 +192,6 @@ export default function Home() {
     return { slippageCost, totalCost: slippageCost + gasFeeUSD };
   };
 
-  // GENERATE DUMMY SOLANA WALLET ADDRESS
   const generateWalletAddress = () => {
     const chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
     let addr = '';
@@ -260,7 +258,6 @@ export default function Home() {
       addWhaleLog(`[WHALE CLUSTER] Wallet ${wallet} accumulated $${newToken.symbol} (Score: ${whaleScore})`);
     }
 
-    // AUTO BUY
     if (
       opportunityScore >= minAiScoreFilter &&
       liquidity >= minLiquidityFilter &&
@@ -333,7 +330,6 @@ export default function Home() {
           let shouldClose = false;
           let closeReason = '';
 
-          // Check Time Exit
           if (enableTimeExit) {
             const elapsedMinutes = (Date.now() - trade.entryTimestamp) / (1000 * 60);
             if (elapsedMinutes >= stagnantTimeLimitMinutes && Math.abs(netPnlPercent) < 5) {
@@ -342,7 +338,6 @@ export default function Home() {
             }
           }
 
-          // Check Partial TP
           let currentPositionSize = trade.positionSizeUSD;
           let updatedPartiallyTaken = trade.partiallyTaken;
           if (enablePartialTP && !trade.partiallyTaken && enableTakeProfit && netPnlPercent >= (takeProfit / 2)) {
@@ -354,14 +349,12 @@ export default function Home() {
             triggerNotification('Partial TP Secured', `$${trade.symbol} 50% posisi sudah diamankan.`);
           }
 
-          // Check Break Even
           let updatedBreakEvenSet = trade.breakEvenSet;
           if (enableBreakEvenProtect && !trade.breakEvenSet && netPnlPercent >= 15) {
             updatedBreakEvenSet = true;
             addSystemLog(`[BREAK-EVEN] Shield Activated for $${trade.symbol}`);
           }
 
-          // Check Trailing Stop
           const peakGainPercent = ((newHighestPrice - trade.entryPrice) / trade.entryPrice) * 100;
           if (enableTrailingStop && peakGainPercent - netPnlPercent >= trailingStop && netPnlPercent > 5) {
             shouldClose = true;
@@ -406,7 +399,6 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [isRunning, activeTrades, takeProfit, stopLoss, trailingStop, enableTakeProfit, enableStopLoss, enableTrailingStop, enablePartialTP, enableBreakEvenProtect, enableTimeExit, stagnantTimeLimitMinutes, isEmergencyKilled]);
 
-  // CLOSE POSITION HANDLER
   const closeTradePosition = (trade, netPnlUSD, netPnlPercent, reason) => {
     const returnAmount = Math.max(0, trade.positionSizeUSD + netPnlUSD);
     setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
@@ -425,7 +417,6 @@ export default function Home() {
     addSystemLog(`🔔 [${reason.toUpperCase()}] Closed $${trade.symbol} | Net PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${netPnlPercent}%)`);
   };
 
-  // EXPORT CSV
   const exportAnalyticsCSV = () => {
     if (closedTrades.length === 0) {
       alert('Belum ada riwayat transaksi ditutup!');
@@ -447,7 +438,6 @@ export default function Home() {
     a.click();
   };
 
-  // EQUITY TRACKING
   useEffect(() => {
     const activePnL = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
     const currentEquity = balanceUSD + activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0) + activePnL;
@@ -464,7 +454,6 @@ export default function Home() {
     }
   }, [balanceUSD, activeTrades, initialCapital, autoPaused]);
 
-  // MAIN RUNNER
   useEffect(() => {
     let timer;
     if (isRunning && !isEmergencyKilled && !autoPaused) {
@@ -476,12 +465,10 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [isRunning, isEmergencyKilled, autoPaused, activeTrades.length, maxPositions, riskPercent, enableCompound, compoundRate, minLiquidityFilter, minAiScoreFilter]);
 
-  // LOG HELPERS
   const addSystemLog = (msg) => setSystemLogs((prev) => [msg, ...prev.slice(0, 19)]);
   const addSmartMoneyLog = (msg) => setSmartMoneyLogs((prev) => [msg, ...prev.slice(0, 9)]);
   const addWhaleLog = (msg) => setWhaleLogs((prev) => [msg, ...prev.slice(0, 9)]);
 
-  // STATS CALCULATIONS
   const totalClosedNetPnL = closedTrades.reduce((acc, t) => acc + t.netPnlUSD, 0);
   const winningTrades = closedTrades.filter((t) => t.netPnlUSD > 0);
   const losingTrades = closedTrades.filter((t) => t.netPnlUSD < 0);
@@ -492,7 +479,6 @@ export default function Home() {
   const totalGrossLoss = Math.abs(losingTrades.reduce((acc, t) => acc + t.netPnlUSD, 0));
   const profitFactor = totalGrossLoss > 0 ? (totalGrossProfit / totalGrossLoss).toFixed(2) : totalGrossProfit > 0 ? 'MAX' : '0.00';
 
-  // SVG LINE CHART GENERATOR FOR EQUITY TREND
   const renderEquityLineChart = () => {
     if (equityHistory.length < 2) return null;
 
@@ -542,12 +528,12 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-5 font-mono relative">
       
-      {/* TOP RIGHT BROWSER NOTIFICATIONS */}
+      {/* NOTIFICATION OVERLAY */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-xs w-full pointer-events-none">
         {notifications.map((n) => (
           <div
             key={n.id}
-            className="pointer-events-auto bg-slate-900/95 border-l-4 border-emerald-400 border-slate-800 p-3 rounded-lg shadow-xl backdrop-blur-md animate-slide-in text-xs"
+            className="pointer-events-auto bg-slate-900/95 border-l-4 border-emerald-400 border-slate-800 p-3 rounded-lg shadow-xl backdrop-blur-md text-xs animate-slide-in"
           >
             <div className="flex justify-between items-center mb-1">
               <span className="font-bold text-emerald-400">{n.title}</span>
@@ -696,6 +682,33 @@ export default function Home() {
         </div>
       </div>
 
+      {/* PANEL: SOLANA WEB3 & JUPITER API SETTINGS */}
+      <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
+        <h2 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3">🔑 Solana Web3 &amp; Jupiter API Settings</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Jupiter API Key (v6):</label>
+            <input
+              type="password"
+              placeholder="Masukkan Jupiter API Key Anda..."
+              value={jupiterApiKey}
+              onChange={(e) => setJupiterApiKey(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-amber-300 font-mono text-xs focus:outline-none focus:border-amber-500"
+            />
+          </div>
+          <div>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">RPC Endpoint Node (Mainnet):</label>
+            <input
+              type="text"
+              placeholder="https://api.mainnet-beta.solana.com"
+              value={rpcEndpoint}
+              onChange={(e) => setRpcEndpoint(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-cyan-300 font-mono text-xs focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+        </div>
+      </div>
+
       {/* DASHBOARD ANALYTICS OVERVIEW */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
         <h2 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-3">📊 Dashboard Analytics &amp; Performance Summary</h2>
@@ -732,7 +745,6 @@ export default function Home() {
         <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Config Engine (Features Toggle)</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
 
-          {/* TOGGLE TAKE PROFIT */}
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -754,7 +766,6 @@ export default function Home() {
             />
           </div>
 
-          {/* TOGGLE STOP LOSS */}
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -776,7 +787,6 @@ export default function Home() {
             />
           </div>
 
-          {/* TOGGLE TRAILING STOP */}
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -798,7 +808,6 @@ export default function Home() {
             />
           </div>
 
-          {/* TOGGLE COMPOUND */}
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -824,7 +833,6 @@ export default function Home() {
             </select>
           </div>
 
-          {/* TOGGLE PARTIAL TP */}
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -837,7 +845,6 @@ export default function Home() {
             </label>
           </div>
 
-          {/* TOGGLE BREAK EVEN */}
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -850,7 +857,6 @@ export default function Home() {
             </label>
           </div>
 
-          {/* TOGGLE ANTI-RUG */}
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -863,7 +869,6 @@ export default function Home() {
             </label>
           </div>
 
-          {/* TOGGLE TIME EXIT */}
           <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
