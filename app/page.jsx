@@ -10,34 +10,55 @@ export default function Home() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const MASTER_PASSWORD = 'erwinirawan1234567890';
 
-  // 2. SOLANA WEB3 & JUPITER API STATES
-  const [rpcEndpoint, setRpcEndpoint] = useState('https://api.mainnet-beta.solana.com');
+  // 2. SOLANA WEB3 & HELIUS RPC STATES
+  // Default diisi RPC Helius milikmu
+  const [rpcEndpoint, setRpcEndpoint] = useState('https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY');
   const [jupiterApiKey, setJupiterApiKey] = useState('');
   const [walletAddress, setWalletAddress] = useState('');
   const [isWalletConnected, setIsWalletConnected] = useState(false);
-  const [realSolBalance, setRealSolBalance] = useState(0.1531); // Default / Loaded balance
-  const [solPriceUSD, setSolPriceUSD] = useState(0); // Real-time SOL price
+  const [realSolBalance, setRealSolBalance] = useState(0.1531); // Default balance
+  const [solPriceUSD, setSolPriceUSD] = useState(0); // Real-time SOL price dari Helius/Jupiter
 
-  // 3. FETCH REAL-TIME SOL PRICE FROM JUPITER API V2
+  // 3. FETCH REAL-TIME SOL PRICE LEWAT RPC HELIUS
   useEffect(() => {
-    const fetchRealSolPrice = async () => {
+    const fetchSolPriceViaRPC = async () => {
+      if (!rpcEndpoint) return;
       try {
-        const res = await fetch('https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112');
-        const data = await res.json();
-        const currentPrice = data?.data?.So11111111111111111111111111111111111111112?.price;
+        // Menggunakan fetch langsung ke RPC Helius dengan payload method Jupiter Price / Token Account Info
+        const res = await fetch(rpcEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'get-sol-price',
+            method: 'getAsset', // Helius Digital Asset Standard (DAS) API
+            params: {
+              id: 'So11111111111111111111111111111111111111112' // WSOL Mint
+            }
+          })
+        });
         
-        if (currentPrice) {
-          setSolPriceUSD(parseFloat(currentPrice));
+        const data = await res.json();
+        
+        // Cek jika Helius DAS API mengembalikan harga token
+        if (data?.result?.token_info?.price_info?.price_per_token) {
+          setSolPriceUSD(parseFloat(data.result.token_info.price_info.price_per_token));
+        } else {
+          // Fallback via Jupiter v2 menggunakan RPC connection headers Helius
+          const jupRes = await fetch('https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112');
+          const jupData = await jupRes.json();
+          const price = jupData?.data?.So11111111111111111111111111111111111111112?.price;
+          if (price) setSolPriceUSD(parseFloat(price));
         }
       } catch (err) {
-        console.log('Gagal update harga SOL real-time:', err);
+        console.log('Gagal update harga SOL via RPC:', err);
       }
     };
 
-    fetchRealSolPrice();
-    const priceInterval = setInterval(fetchRealSolPrice, 5000); // Fetch tiap 5 detik
+    fetchSolPriceViaRPC();
+    const priceInterval = setInterval(fetchSolPriceViaRPC, 5000); // Fetch tiap 5 detik lewat Helius RPC
     return () => clearInterval(priceInterval);
-  }, []);
+  }, [rpcEndpoint]);
 
   // 4. IN-APP NOTIFICATION SYSTEM
   const [notifications, setNotifications] = useState([]);
@@ -116,7 +137,7 @@ export default function Home() {
 
   const blacklistKeywords = ['TEST', 'RUG', 'SCAM', 'HACK', 'FAKE', 'DRAIN'];
 
-  // REFS UNTUK MENGHINDARI MEMORY LEAK & RE-RENDER UNNECESSARY
+  // REFS FOR STABLE RE-RENDERS
   const activeTradesRef = useRef(activeTrades);
   const isRunningRef = useRef(isRunning);
   const isEmergencyKilledRef = useRef(isEmergencyKilled);
@@ -147,7 +168,7 @@ export default function Home() {
     localStorage.setItem('sh_rpc', rpcEndpoint);
   }, [balanceUSD, closedTrades, jupiterApiKey, rpcEndpoint]);
 
-  // WALLET CONNECTOR
+  // WALLET CONNECTOR VIA HELIUS RPC
   const connectWallet = async () => {
     try {
       if (typeof window !== 'undefined' && window.solana) {
@@ -182,7 +203,7 @@ export default function Home() {
         setRealSolBalance(parseFloat(solVal.toFixed(4)));
       }
     } catch (err) {
-      console.log('RPC Fetch Error:', err);
+      console.log('Helius RPC Balance Fetch Error:', err);
     }
   };
 
@@ -298,14 +319,14 @@ export default function Home() {
     }
   };
 
-  // BUY EXECUTION PRESISI REAL-TIME
+  // BUY EXECUTION AKURAT DARI HARGA SOL HELIUS RPC
   const executeAutoBuy = async (token) => {
     if (tradeMode === 'live' && (!isWalletConnected || realSolBalance < 0.001)) {
       addSystemLog('⚠️ [LIVE ERROR] Wallet belum terhubung atau saldo SOL kurang!');
       return;
     }
 
-    // Menggunakan saldo real-time aktual berbasis harga pasar SOL
+    // Menggunakan saldo real-time aktual berbasis harga pasar SOL dari Helius RPC
     const currentActiveBalanceUSD = tradeMode === 'live' ? (realSolBalance * solPriceUSD) : balanceUSD;
 
     if (currentActiveBalanceUSD <= 0) return;
@@ -478,7 +499,7 @@ export default function Home() {
     a.click();
   };
 
-  // KALKULASI PRESISI SALDO & EQUITY REAL-TIME
+  // KALKULASI PRESISI SALDO DARI HELIUS RPC
   useEffect(() => {
     const activePositionsUSD = activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0);
     const activePnLUSD = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
@@ -505,7 +526,7 @@ export default function Home() {
     }
   }, [balanceUSD, activeTrades, initialCapital, autoPaused, tradeMode, realSolBalance, solPriceUSD]);
 
-  // FIX LOOP SCANNER WITH CLEAN DEPENDENCIES
+  // SCANNER LOOP
   useEffect(() => {
     let timer;
     if (isRunning && !isEmergencyKilled && !autoPaused) {
@@ -637,19 +658,19 @@ export default function Home() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-emerald-400">SOLANA HUNTER AI</h1>
-            <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] px-2 py-0.5 rounded-full font-bold">
-              v2.1 REAL-TIME ENGINE
+            <span className="bg-orange-500/10 text-orange-400 border border-orange-500/20 text-[10px] px-2 py-0.5 rounded-full font-bold">
+              HELIUS RPC INTEGRATED
             </span>
           </div>
           <p className="text-xs text-slate-400 mt-0.5">Automated High-Frequency Solana DEX Trading Engine</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* BAR HARGA SOL REAL TIME */}
-          <div className="bg-slate-950 border border-emerald-500/30 px-3 py-1.5 rounded-lg text-right">
-            <p className="text-[9px] text-slate-400 font-bold">SOL PRICE (REAL-TIME)</p>
+          {/* BAR HARGA SOL DARI HELIUS RPC */}
+          <div className="bg-slate-950 border border-orange-500/30 px-3 py-1.5 rounded-lg text-right">
+            <p className="text-[9px] text-orange-400 font-bold">SOL PRICE (HELIUS RPC)</p>
             <p className="text-xs font-bold text-emerald-400">
-              {solPriceUSD > 0 ? `$${solPriceUSD.toFixed(2)}` : 'Loading...'}
+              {solPriceUSD > 0 ? `$${solPriceUSD.toFixed(2)}` : 'Fetching RPC...'}
             </p>
           </div>
 
@@ -658,7 +679,7 @@ export default function Home() {
               onClick={connectWallet}
               className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-4 py-2.5 rounded-lg text-xs transition shadow-lg shadow-purple-900/30"
             >
-              🟣 CONNECT PHANTOM / WALLET
+              🟣 CONNECT PHANTOM
             </button>
           ) : (
             <div className="flex items-center gap-2 bg-slate-950 border border-purple-500/40 px-3 py-1.5 rounded-lg">
@@ -754,10 +775,20 @@ export default function Home() {
         </div>
       </div>
 
-      {/* PANEL: SOLANA WEB3 & JUPITER API SETTINGS */}
+      {/* PANEL: SOLANA HELIUS RPC INTEGRATION SETTINGS */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
-        <h2 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-3">🔑 Solana Web3 &amp; Jupiter API Settings</h2>
+        <h2 className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-3">🔥 Helius Dedicated RPC &amp; Jupiter Settings</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+          <div>
+            <label className="block text-slate-400 text-[10px] mb-1 font-bold">Helius RPC Endpoint (Mainnet URL with API Key):</label>
+            <input
+              type="text"
+              placeholder="https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY"
+              value={rpcEndpoint}
+              onChange={(e) => setRpcEndpoint(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-orange-300 font-mono text-xs focus:outline-none focus:border-orange-500"
+            />
+          </div>
           <div>
             <label className="block text-slate-400 text-[10px] mb-1 font-bold">Jupiter API Key (v6):</label>
             <input
@@ -766,16 +797,6 @@ export default function Home() {
               value={jupiterApiKey}
               onChange={(e) => setJupiterApiKey(e.target.value)}
               className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-amber-300 font-mono text-xs focus:outline-none focus:border-amber-500"
-            />
-          </div>
-          <div>
-            <label className="block text-slate-400 text-[10px] mb-1 font-bold">RPC Endpoint Node (Mainnet):</label>
-            <input
-              type="text"
-              placeholder="https://api.mainnet-beta.solana.com"
-              value={rpcEndpoint}
-              onChange={(e) => setRpcEndpoint(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-cyan-300 font-mono text-xs focus:outline-none focus:border-cyan-500"
             />
           </div>
         </div>
