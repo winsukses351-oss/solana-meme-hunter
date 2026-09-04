@@ -6,21 +6,24 @@ export default function Home() {
   const [tradeMode, setTradeMode] = useState('demo');
   const [balanceUSD, setBalanceUSD] = useState(10.0);
   
+  // Risk & Position Management
   const [riskPercent, setRiskPercent] = useState(20);
   const [takeProfit, setTakeProfit] = useState(50);
   const [stopLoss, setStopLoss] = useState(15);
-  
+  const [maxPositions, setMaxPositions] = useState(5); // Batas maksimal posisi aktif
+  const [minLiquidity, setMinLiquidity] = useState(5000); // Minimal Liquidity $5k
+
   const [scannedTokens, setScannedTokens] = useState([]);
   const [activeTrades, setActiveTrades] = useState([]);
   const [whaleLogs, setWhaleLogs] = useState([]);
   const [logs, setLogs] = useState([]);
 
-  // Mock Backup Generator agar bot dijamin tidak pernah macet
+  // Mock Generator jika API error
   const generateMockToken = () => {
     const mockSymbols = ['PUMP', 'BONK2', 'SOLDOGE', 'MOON', 'CATSOL', 'PEPEARMY', 'WIF2', 'BULL'];
     const randomSymbol = mockSymbols[Math.floor(Math.random() * mockSymbols.length)] + Math.floor(Math.random() * 900 + 100);
     const aiScore = Math.floor(Math.random() * 25) + 75;
-    const liquidity = Math.floor(Math.random() * 45000) + 5000;
+    const liquidity = Math.floor(Math.random() * 45000) + 3000;
     const price = parseFloat((Math.random() * 0.005 + 0.0001).toFixed(6));
 
     return {
@@ -34,11 +37,11 @@ export default function Home() {
     };
   };
 
+  // 1. Scan Market
   const scanMarket = async () => {
     let newToken = null;
 
     try {
-      // Coba fetch DexScreener API
       const res = await fetch('https://api.dexscreener.com/latest/dex/tokens/solana', { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
@@ -56,15 +59,11 @@ export default function Home() {
         }
       }
     } catch (e) {
-      // Jika terblokir CORS, fallback ke generator
       newToken = generateMockToken();
     }
 
-    if (!newToken) {
-      newToken = generateMockToken();
-    }
+    if (!newToken) newToken = generateMockToken();
 
-    // Update Token Feed
     setScannedTokens((prev) => [newToken, ...prev.slice(0, 4)]);
     addLog(`[${newToken.time}] Scanned $${newToken.symbol} | Liq: $${Math.round(newToken.liquidity)} | Score: ${newToken.aiScore}/100`);
 
@@ -72,27 +71,104 @@ export default function Home() {
       addWhaleLog(`[WHALE] Buy $${newToken.whaleVolume} di $${newToken.symbol}`);
     }
 
-    // Auto Trade Demo
-    if (newToken.aiScore >= 85 && tradeMode === 'demo') {
+    // Auto Buy Criteria: Score >= 85 & Liq >= Minimal Filter & Max Position Belum Penuh
+    if (newToken.aiScore >= 85 && newToken.liquidity >= minLiquidity && tradeMode === 'demo') {
       executeTrade(newToken);
     }
   };
 
+  // 2. Eksekusi Beli
   const executeTrade = (token) => {
-    setBalanceUSD((prevBalance) => {
-      const positionSize = parseFloat((prevBalance * (riskPercent / 100)).toFixed(2));
-      if (prevBalance >= positionSize && positionSize > 0) {
-        const newTrade = {
-          ...token,
-          id: Date.now(),
-          entryPrice: token.price,
-          positionSizeUSD: positionSize,
-        };
-        setActiveTrades((prev) => [newTrade, ...prev]);
-        addLog(`[AUTO-BUY] $${token.symbol} | Allocated: $${positionSize} (${riskPercent}%)`);
-        return parseFloat((prevBalance - positionSize).toFixed(2));
+    setActiveTrades((currentTrades) => {
+      if (currentTrades.length >= maxPositions) {
+        return currentTrades; // Skip jika slot posisi penuh
       }
-      return prevBalance;
+
+      setBalanceUSD((prevBalance) => {
+        const positionSize = parseFloat((prevBalance * (riskPercent / 100)).toFixed(2));
+        if (prevBalance >= positionSize && positionSize > 0.1) {
+          const newTrade = {
+            ...token,
+            id: Date.now() + Math.random(),
+            entryPrice: token.price,
+            currentPrice: token.price,
+            positionSizeUSD: positionSize,
+            pnlPercent: 0,
+            pnlUSD: 0
+          };
+          addLog(`[AUTO-BUY] $${token.symbol} | Allocated: $${positionSize} (${riskPercent}%)`);
+          
+          // Tambah ke list active trades
+          setTimeout(() => {
+            setActiveTrades((prev) => [newTrade, ...prev]);
+          }, 0);
+
+          return parseFloat((prevBalance - positionSize).toFixed(2));
+        }
+        return prevBalance;
+      });
+
+      return currentTrades;
+    });
+  };
+
+  // 3. Simulated PnL Engine + Auto TP/SL
+  useEffect(() => {
+    if (!isRunning || activeTrades.length === 0) return;
+
+    const interval = setInterval(() => {
+      setActiveTrades((prevTrades) => {
+        const updatedTrades = [];
+
+        prevTrades.forEach((trade) => {
+          // Simulasi Fluktuasi Harga (-8% sampai +10%)
+          const changePercent = (Math.random() * 18 - 8);
+          const newPnlPercent = parseFloat((trade.pnlPercent + changePercent).toFixed(2));
+          const newPrice = trade.currentPrice * (1 + changePercent / 100);
+          const newPnlUSD = parseFloat((trade.positionSizeUSD * (newPnlPercent / 100)).toFixed(2));
+
+          // Cek AUTO TAKE PROFIT
+          if (newPnlPercent >= takeProfit) {
+            const returnAmount = trade.positionSizeUSD + newPnlUSD;
+            setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
+            addLog(`[AUTO-TP 🎯] Sold $${trade.symbol} @ +${newPnlPercent}% (Profit: +$${newPnlUSD.toFixed(2)})`);
+            return; // Hapus dari activeTrades (Close Position)
+          }
+
+          // Cek AUTO STOP LOSS
+          if (newPnlPercent <= -stopLoss) {
+            const returnAmount = Math.max(0, trade.positionSizeUSD + newPnlUSD);
+            setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
+            addLog(`[AUTO-SL 🛑] Sold $${trade.symbol} @ ${newPnlPercent}% (Loss: -$${Math.abs(newPnlUSD).toFixed(2)})`);
+            return; // Hapus dari activeTrades (Close Position)
+          }
+
+          // Jika belum TP/SL, simpan perubahan harga
+          updatedTrades.push({
+            ...trade,
+            currentPrice: newPrice,
+            pnlPercent: newPnlPercent,
+            pnlUSD: newPnlUSD
+          });
+        });
+
+        return updatedTrades;
+      });
+    }, 2500); // Update PnL tiap 2.5 detik
+
+    return () => clearInterval(interval);
+  }, [isRunning, takeProfit, stopLoss, activeTrades.length]);
+
+  // 4. Emergency Manual Close (Sell Manual)
+  const manualCloseTrade = (tradeId) => {
+    setActiveTrades((prevTrades) => {
+      const tradeToClose = prevTrades.find((t) => t.id === tradeId);
+      if (tradeToClose) {
+        const returnAmount = Math.max(0, tradeToClose.positionSizeUSD + tradeToClose.pnlUSD);
+        setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
+        addLog(`[EMERGENCY SELL 🚨] $${tradeToClose.symbol} Closed @ ${tradeToClose.pnlPercent}%`);
+      }
+      return prevTrades.filter((t) => t.id !== tradeId);
     });
   };
 
@@ -104,17 +180,17 @@ export default function Home() {
     setWhaleLogs((prev) => [msg, ...prev.slice(0, 5)]);
   };
 
-  // Loop Control
+  // Main Loop Scanner
   useEffect(() => {
     let timer;
     if (isRunning) {
-      scanMarket(); // Langsung jalankan sekali saat START
+      scanMarket();
       timer = setInterval(() => {
         scanMarket();
-      }, 3000); // Running tiap 3 detik
+      }, 3500);
     }
     return () => clearInterval(timer);
-  }, [isRunning, tradeMode, riskPercent]);
+  }, [isRunning, tradeMode, riskPercent, minLiquidity, maxPositions]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 font-mono">
@@ -122,7 +198,7 @@ export default function Home() {
       <div className="max-w-5xl mx-auto flex justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
         <div>
           <h1 className="text-xl font-bold text-emerald-400">SOLANA HUNTER AI</h1>
-          <p className="text-xs text-slate-400">Real-Time DexScreener/Pump.fun Engine + Risk Management</p>
+          <p className="text-xs text-slate-400">Real-Time DexScreener Engine + Auto TP/SL & Risk Guard</p>
         </div>
         <button
           onClick={() => {
@@ -169,7 +245,7 @@ export default function Home() {
 
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <p className="text-xs text-slate-400 mb-1">POSITIONS OPEN</p>
-          <p className="text-2xl font-bold text-emerald-400">{activeTrades.length}</p>
+          <p className="text-2xl font-bold text-emerald-400">{activeTrades.length} / {maxPositions}</p>
         </div>
 
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
@@ -180,35 +256,53 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Risk Controls */}
+      {/* Settings Grid */}
       <div className="max-w-5xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Risk Management & Position Sizing</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Risk Management & Filters</h2>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div>
-            <label className="text-[11px] text-slate-400 block mb-1">Risk Size per Trade (% Saldo):</label>
+            <label className="text-[10px] text-slate-400 block mb-1">Risk per Trade (%):</label>
             <input
               type="number"
               value={riskPercent}
               onChange={(e) => setRiskPercent(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-amber-400 font-bold focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-amber-400 font-bold focus:outline-none"
             />
           </div>
           <div>
-            <label className="text-[11px] text-slate-400 block mb-1">Take Profit Target (%):</label>
+            <label className="text-[10px] text-slate-400 block mb-1">Take Profit (%):</label>
             <input
               type="number"
               value={takeProfit}
               onChange={(e) => setTakeProfit(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-emerald-400 font-bold focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-emerald-400 font-bold focus:outline-none"
             />
           </div>
           <div>
-            <label className="text-[11px] text-slate-400 block mb-1">Stop Loss Limit (%):</label>
+            <label className="text-[10px] text-slate-400 block mb-1">Stop Loss (%):</label>
             <input
               type="number"
               value={stopLoss}
               onChange={(e) => setStopLoss(Number(e.target.value))}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-sm text-rose-400 font-bold focus:outline-none"
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-rose-400 font-bold focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">Max Positions:</label>
+            <input
+              type="number"
+              value={maxPositions}
+              onChange={(e) => setMaxPositions(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-cyan-400 font-bold focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">Min Liquidity ($):</label>
+            <input
+              type="number"
+              value={minLiquidity}
+              onChange={(e) => setMinLiquidity(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-indigo-400 font-bold focus:outline-none"
             />
           </div>
         </div>
@@ -216,8 +310,9 @@ export default function Home() {
 
       {/* Main Grid */}
       <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        {/* Scanner Feed */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-          <h2 className="text-sm font-bold text-slate-300 mb-3">🎯 Live DexScreener & Pump.fun Feed</h2>
+          <h2 className="text-sm font-bold text-slate-300 mb-3">🎯 Live DexScreener Feed</h2>
           <div className="space-y-2">
             {scannedTokens.length === 0 ? (
               <p className="text-xs text-slate-500">Tekan "START HUNTING" untuk memindai token baru...</p>
@@ -239,30 +334,49 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Active Demo Positions with Dynamic PnL */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-sm font-bold text-amber-400 mb-3">⚡ Active Demo Positions ({activeTrades.length})</h2>
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-[320px] overflow-y-auto">
             {activeTrades.length === 0 ? (
-              <p className="text-xs text-slate-500">Belum ada posisi terbuka. Bot otomatis eksekusi jika AI Score ≥ 85.</p>
+              <p className="text-xs text-slate-500">Belum ada posisi terbuka. Bot otomatis eksekusi jika AI Score ≥ 85 &amp; lolos filter.</p>
             ) : (
-              activeTrades.map((trade) => (
-                <div key={trade.id} className="bg-slate-950 p-3 rounded-lg border border-amber-500/30 flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-slate-200 text-sm">${trade.symbol}</p>
-                    <p className="text-[10px] text-slate-400">Entry: ${trade.entryPrice} | Allocated: ${trade.positionSizeUSD.toFixed(2)}</p>
+              activeTrades.map((trade) => {
+                const isProfit = trade.pnlPercent >= 0;
+                return (
+                  <div key={trade.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800 flex justify-between items-center">
+                    <div>
+                      <p className="font-bold text-slate-200 text-sm">${trade.symbol}</p>
+                      <p className="text-[10px] text-slate-400">Size: ${trade.positionSizeUSD.toFixed(2)} | Entry: ${trade.entryPrice}</p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <p className={`text-xs font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {isProfit ? '+' : ''}{trade.pnlPercent}%
+                        </p>
+                        <p className={`text-[10px] ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {isProfit ? '+' : ''}${trade.pnlUSD.toFixed(2)}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => manualCloseTrade(trade.id)}
+                        className="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 text-[10px] font-bold px-2 py-1 rounded transition"
+                        title="Emergency Sell"
+                      >
+                        SELL
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold block mb-0.5">TP: +{takeProfit}%</span>
-                    <span className="text-[10px] bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded font-bold block">SL: -{stopLoss}%</span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
       </div>
 
-      {/* Logs */}
+      {/* Whale Tracker & Logs */}
       <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-sm font-bold text-cyan-400 mb-2">🐋 Whale & Smart Money Tracker</h2>
@@ -280,5 +394,5 @@ export default function Home() {
       </div>
     </div>
   );
-    }
-    
+        }
+      
