@@ -1,4 +1,4 @@
-      'use client';
+'use client';
 import React, { useState, useEffect } from 'react';
 
 export default function Home() {
@@ -7,44 +7,89 @@ export default function Home() {
   const [isEmergencyKilled, setIsEmergencyKilled] = useState(false);
   const [tradeMode, setTradeMode] = useState('demo'); // 'demo' | 'live'
   
-  // 8. CAPITAL MANAGEMENT & 9. COMPOUND SYSTEM
+  // 8. CAPITAL MANAGEMENT & COMPOUND SYSTEM
   const [balanceUSD, setBalanceUSD] = useState(10.0);
   const [initialCapital] = useState(10.0);
   const [equity, setEquity] = useState(10.0);
   const [compoundRate, setCompoundRate] = useState(0); // 0, 25, 50, 75, 100
   const [riskPercent, setRiskPercent] = useState(20);
   const [maxPositions, setMaxPositions] = useState(5);
+  const [minLiquidityFilter, setMinLiquidityFilter] = useState(5000); // Filter Min Liquidity ($)
+  const [minAiScoreFilter, setMinAiScoreFilter] = useState(80); // Filter Min AI Score
   const [dailyLossLimit, setDailyLossLimit] = useState(15); // %
   const [maxDrawdownThreshold, setMaxDrawdownThreshold] = useState(25); // %
   const [autoPaused, setAutoPaused] = useState(false);
 
-  // AUTO TRADING PARAMETERS (Module 7)
+  // AUTO TRADING PARAMETERS
   const [takeProfit, setTakeProfit] = useState(50);
   const [stopLoss, setStopLoss] = useState(15);
   const [trailingStop, setTrailingStop] = useState(10);
   const [partialTP, setPartialTP] = useState(true);
   const [breakEvenProtect, setBreakEvenProtect] = useState(true);
 
-  // COST ENGINE PARAMETERS (Module 10)
+  // COST ENGINE PARAMETERS
   const [slippage, setSlippage] = useState(1.0); // %
   const [gasFeeUSD, setGasFeeUSD] = useState(0.02); // $
 
-  // DATA STATES
+  // DATA STATES & EQUITY HISTORY (CHART)
   const [scannedTokens, setScannedTokens] = useState([]);
   const [activeTrades, setActiveTrades] = useState([]);
   const [closedTrades, setClosedTrades] = useState([]);
   const [smartMoneyLogs, setSmartMoneyLogs] = useState([]);
   const [whaleLogs, setWhaleLogs] = useState([]);
   const [systemLogs, setSystemLogs] = useState([]);
+  const [equityHistory, setEquityHistory] = useState([10.0]);
 
-  // 10. COST ENGINE HELPER
+  // AUDIO SOUND SYNTHESIZER
+  const playSound = (type) => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      if (type === 'buy') {
+        osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+      } else if (type === 'tp') {
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.15); // A5
+      } else if (type === 'sl') {
+        osc.frequency.setValueAtTime(300, ctx.currentTime);
+        osc.frequency.setValueAtTime(150, ctx.currentTime + 0.15);
+      }
+      osc.start();
+      gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.3);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch (e) {
+      console.log('Audio error:', e);
+    }
+  };
+
+  // LOCAL STORAGE (PERSISTENCE)
+  useEffect(() => {
+    const savedBalance = localStorage.getItem('sh_balanceUSD');
+    const savedClosed = localStorage.getItem('sh_closedTrades');
+    if (savedBalance) setBalanceUSD(parseFloat(savedBalance));
+    if (savedClosed) setClosedTrades(JSON.parse(savedClosed));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('sh_balanceUSD', balanceUSD.toString());
+    localStorage.setItem('sh_closedTrades', JSON.stringify(closedTrades));
+  }, [balanceUSD, closedTrades]);
+
+  // COST ENGINE HELPER
   const calculateCosts = (positionSize) => {
     const slippageCost = positionSize * (slippage / 100);
     const totalCost = slippageCost + gasFeeUSD;
     return { slippageCost, totalCost };
   };
 
-  // 1-6. NEW TOKEN DISCOVERY & AI OPPORTUNITY SCORE ENGINE
+  // NEW TOKEN DISCOVERY & AI OPPORTUNITY SCORE ENGINE
   const scanMarket = async () => {
     if (isEmergencyKilled || autoPaused) return;
 
@@ -54,13 +99,11 @@ export default function Home() {
     const randomDex = dexSources[Math.floor(Math.random() * dexSources.length)];
     const randomSymbol = mockSymbols[Math.floor(Math.random() * mockSymbols.length)] + Math.floor(Math.random() * 900 + 100);
     
-    // Module 2-5 Scores (0-100)
     const smartMoneyScore = Math.floor(Math.random() * 40) + 60;
     const whaleScore = Math.floor(Math.random() * 45) + 55;
     const momentumScore = Math.floor(Math.random() * 50) + 50;
-    const safetyScore = Math.floor(Math.random() * 35) + 65; // Honeypot / Rug detect
+    const safetyScore = Math.floor(Math.random() * 35) + 65;
 
-    // Module 6: Combined Opportunity Score
     const opportunityScore = Math.round((smartMoneyScore + whaleScore + momentumScore + safetyScore) / 4);
 
     let category = 'Avoid';
@@ -69,7 +112,7 @@ export default function Home() {
     else if (opportunityScore >= 70) category = 'Moderate';
 
     const price = parseFloat((Math.random() * 0.005 + 0.0001).toFixed(6));
-    const liquidity = Math.floor(Math.random() * 45000) + 3000;
+    const liquidity = Math.floor(Math.random() * 50000) + 1000;
 
     const newToken = {
       id: Date.now() + Math.random(),
@@ -87,9 +130,8 @@ export default function Home() {
     };
 
     setScannedTokens((prev) => [newToken, ...prev.slice(0, 5)]);
-    addSystemLog(`[DISCOVERY] $${newToken.symbol} via ${newToken.dex} | Opp Score: ${newToken.opportunityScore} (${newToken.category})`);
+    addSystemLog(`[DISCOVERY] $${newToken.symbol} via ${newToken.dex} | Opp Score: ${newToken.opportunityScore} | Liq: $${newToken.liquidity}`);
 
-    // Feed Logs
     if (smartMoneyScore > 75) {
       addSmartMoneyLog(`[SMART MONEY] High Win-Rate Wallet Buy $${newToken.symbol} (Score: ${smartMoneyScore})`);
     }
@@ -97,17 +139,20 @@ export default function Home() {
       addWhaleLog(`[WHALE] Large Cluster Accumulation $${newToken.symbol} (Score: ${whaleScore})`);
     }
 
-    // Module 7: Auto Execute
-    if (opportunityScore >= 80 && activeTrades.length < maxPositions) {
+    // AUTO BUY EXECUTION WITH MIN LIQUIDITY & SCORE FILTER
+    if (
+      opportunityScore >= minAiScoreFilter &&
+      liquidity >= minLiquidityFilter &&
+      activeTrades.length < maxPositions
+    ) {
       executeAutoBuy(newToken);
     }
   };
 
-  // 7. AUTO BUY EXECUTION WITH RISK GUARD
+  // AUTO BUY EXECUTION WITH RISK GUARD
   const executeAutoBuy = (token) => {
     if (balanceUSD < 0.5) return;
 
-    // Compound logic
     let sizePercent = riskPercent;
     if (compoundRate > 0) {
       sizePercent = Math.min(100, riskPercent * (1 + compoundRate / 100));
@@ -134,11 +179,12 @@ export default function Home() {
 
     setBalanceUSD((prev) => parseFloat((prev - positionSize).toFixed(2)));
     setActiveTrades((prev) => [newTrade, ...prev]);
+    playSound('buy');
 
     addSystemLog(`🚀 [AUTO-BUY] $${token.symbol} @ $${token.price} | Size: $${positionSize} (Cost: $${totalCost.toFixed(3)})`);
   };
 
-  // 3 & 7. PNL SIMULATOR, TRAILING STOP, BREAK EVEN & AUTO TP/SL LOOP
+  // PNL SIMULATOR, TRAILING STOP, BREAK EVEN & AUTO TP/SL LOOP
   useEffect(() => {
     if (!isRunning || activeTrades.length === 0 || isEmergencyKilled) return;
 
@@ -147,7 +193,7 @@ export default function Home() {
         const remainingTrades = [];
 
         prevTrades.forEach((trade) => {
-          const priceChange = (Math.random() * 16 - 7); // -7% to +9%
+          const priceChange = (Math.random() * 16 - 7);
           const newPrice = trade.currentPrice * (1 + priceChange / 100);
           const newHighestPrice = Math.max(trade.highestPrice, newPrice);
           
@@ -187,19 +233,16 @@ export default function Home() {
             closeReason = `Trailing Stop (-${trailingStop}%)`;
           }
 
-          // Break Even Trigger
           if (updatedBreakEvenSet && netPnlPercent <= 0) {
             shouldClose = true;
             closeReason = 'Break-Even Guard';
           }
 
-          // Hard Take Profit
           if (netPnlPercent >= takeProfit) {
             shouldClose = true;
             closeReason = `Take Profit (+${takeProfit}%)`;
           }
 
-          // Hard Stop Loss
           if (netPnlPercent <= -stopLoss) {
             shouldClose = true;
             closeReason = `Stop Loss (-${stopLoss}%)`;
@@ -233,6 +276,9 @@ export default function Home() {
     const returnAmount = Math.max(0, trade.positionSizeUSD + netPnlUSD);
     setBalanceUSD((prev) => parseFloat((prev + returnAmount).toFixed(2)));
 
+    if (netPnlUSD >= 0) playSound('tp');
+    else playSound('sl');
+
     const closedItem = {
       ...trade,
       closePrice: trade.currentPrice,
@@ -246,14 +292,16 @@ export default function Home() {
     addSystemLog(`🔔 [${reason.toUpperCase()}] Closed $${trade.symbol} | Net PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${netPnlPercent}%)`);
   };
 
-  // 8. RISK GUARD & DRAWDOWN MONITOR
+  // RISK GUARD & EQUITY TRACKER
   useEffect(() => {
     const activePnL = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
     const currentEquity = balanceUSD + activeTrades.reduce((acc, curr) => acc + curr.positionSizeUSD, 0) + activePnL;
-    setEquity(parseFloat(currentEquity.toFixed(2)));
+    const roundedEquity = parseFloat(currentEquity.toFixed(2));
+    setEquity(roundedEquity);
 
-    // Drawdown Calculation
-    const drawdown = ((initialCapital - currentEquity) / initialCapital) * 100;
+    setEquityHistory((prev) => [...prev.slice(-19), roundedEquity]);
+
+    const drawdown = ((initialCapital - roundedEquity) / initialCapital) * 100;
     if (drawdown >= maxDrawdownThreshold && !autoPaused) {
       setAutoPaused(true);
       addSystemLog(`⚠️ [RISK GUARD] Max Drawdown (${drawdown.toFixed(1)}%) Reached! Bot Auto-Paused.`);
@@ -270,14 +318,14 @@ export default function Home() {
       }, 3000);
     }
     return () => clearInterval(timer);
-  }, [isRunning, isEmergencyKilled, autoPaused, activeTrades.length, maxPositions, riskPercent, compoundRate]);
+  }, [isRunning, isEmergencyKilled, autoPaused, activeTrades.length, maxPositions, riskPercent, compoundRate, minLiquidityFilter, minAiScoreFilter]);
 
   // LOG HELPERS
   const addSystemLog = (msg) => setSystemLogs((prev) => [msg, ...prev.slice(0, 19)]);
   const addSmartMoneyLog = (msg) => setSmartMoneyLogs((prev) => [msg, ...prev.slice(0, 9)]);
   const addWhaleLog = (msg) => setWhaleLogs((prev) => [msg, ...prev.slice(0, 9)]);
 
-  // 11. DASHBOARD ANALYTICS CALCULATIONS
+  // DASHBOARD ANALYTICS
   const totalClosedNetPnL = closedTrades.reduce((acc, t) => acc + t.netPnlUSD, 0);
   const winningTrades = closedTrades.filter((t) => t.netPnlUSD > 0);
   const losingTrades = closedTrades.filter((t) => t.netPnlUSD < 0);
@@ -288,7 +336,7 @@ export default function Home() {
   const profitFactor = totalGrossLoss > 0 ? (totalGrossProfit / totalGrossLoss).toFixed(2) : totalGrossProfit > 0 ? 'MAX' : '0.00';
   const currentDrawdown = Math.max(0, (((initialCapital - equity) / initialCapital) * 100)).toFixed(1);
 
-  // 14. EMERGENCY KILL SWITCH
+  // EMERGENCY KILL SWITCH
   const triggerEmergencyKill = () => {
     setIsEmergencyKilled(true);
     setIsRunning(false);
@@ -301,7 +349,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-3 sm:p-5 font-mono">
-      {/* 11 & 14. HEADER & EMERGENCY CONTROL */}
+      {/* HEADER & EMERGENCY CONTROL */}
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center bg-slate-900 border border-slate-800 p-4 rounded-xl gap-4 mb-4">
         <div>
           <div className="flex items-center gap-2">
@@ -337,7 +385,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 11. DASHBOARD STATS METRICS */}
+      {/* DASHBOARD STATS METRICS */}
       <div className="max-w-7xl mx-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-4">
         <div className="bg-slate-900 border border-slate-800 p-3 rounded-xl">
           <p className="text-[10px] text-slate-400">TRADING MODE</p>
@@ -394,10 +442,10 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 7, 8, 9, 10. CONTROL & CONFIGURATION PANEL */}
+      {/* CONTROL & CONFIGURATION PANEL */}
       <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
         <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">⚙️ Config Engine (Risk, Compound &amp; Cost Guard)</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3 text-xs">
           <div>
             <label className="text-[10px] text-slate-400 block mb-1">Risk per Trade (%):</label>
             <input
@@ -435,6 +483,26 @@ export default function Home() {
               value={trailingStop}
               onChange={(e) => setTrailingStop(Number(e.target.value))}
               className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-cyan-400 font-bold focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">Min Liquidity ($):</label>
+            <input
+              type="number"
+              value={minLiquidityFilter}
+              onChange={(e) => setMinLiquidityFilter(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-blue-400 font-bold focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">Min AI Score:</label>
+            <input
+              type="number"
+              value={minAiScoreFilter}
+              onChange={(e) => setMinAiScoreFilter(Number(e.target.value))}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-yellow-400 font-bold focus:outline-none"
             />
           </div>
 
@@ -488,9 +556,29 @@ export default function Home() {
         </div>
       </div>
 
+      {/* EQUITY TREND CHART */}
+      <div className="max-w-7xl mx-auto bg-slate-900 border border-slate-800 p-4 rounded-xl mb-4">
+        <h2 className="text-xs font-bold text-slate-300 mb-2">📈 Equity Curve Trend</h2>
+        <div className="flex items-end h-20 gap-1 bg-slate-950 p-2 rounded-lg border border-slate-800/80">
+          {equityHistory.map((val, idx) => {
+            const maxVal = Math.max(...equityHistory, 15);
+            const minVal = Math.min(...equityHistory, 5);
+            const heightPercent = Math.max(10, Math.min(100, ((val - minVal) / (maxVal - minVal || 1)) * 100));
+            return (
+              <div
+                key={idx}
+                className="flex-1 bg-emerald-500/30 border-t-2 border-emerald-400 rounded-t transition-all duration-300 hover:bg-emerald-400"
+                style={{ height: `${heightPercent}%` }}
+                title={`$${val.toFixed(2)}`}
+              />
+            );
+          })}
+        </div>
+      </div>
+
       {/* MAIN DATA GRID */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-        {/* 1, 4, 5, 6. NEW OPPORTUNITIES FEED */}
+        {/* NEW OPPORTUNITIES FEED */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-xs font-bold text-slate-300 mb-3 flex justify-between items-center">
             <span>🎯 Live DEX Multi-Monitor</span>
@@ -521,7 +609,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Sub Scores Bar */}
                   <div className="grid grid-cols-4 gap-1 mt-2 pt-2 border-t border-slate-900 text-[9px] text-slate-400">
                     <div>Smart: <span className="text-cyan-400">{token.smartMoneyScore}</span></div>
                     <div>Whale: <span className="text-purple-400">{token.whaleScore}</span></div>
@@ -534,12 +621,12 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 7. ACTIVE POSITIONS */}
+        {/* ACTIVE POSITIONS */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-xs font-bold text-amber-400 mb-3">⚡ Active Positions ({activeTrades.length})</h2>
           <div className="space-y-2 max-h-[380px] overflow-y-auto">
             {activeTrades.length === 0 ? (
-              <p className="text-xs text-slate-500">Belum ada posisi aktif. Bot otomatis beli jika AI Score ≥ 80.</p>
+              <p className="text-xs text-slate-500">Belum ada posisi aktif. Bot otomatis beli jika AI Score ≥ {minAiScoreFilter} &amp; Liq ≥ ${minLiquidityFilter}.</p>
             ) : (
               activeTrades.map((trade) => {
                 const isProfitable = trade.pnlPercent >= 0;
@@ -581,7 +668,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 11. CLOSED POSITIONS & PERFORMANCE HISTORY */}
+        {/* CLOSED POSITIONS & PERFORMANCE HISTORY */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-xs font-bold text-slate-300 mb-3">📜 Closed History ({closedTrades.length})</h2>
           <div className="space-y-2 max-h-[380px] overflow-y-auto text-xs">
@@ -607,9 +694,8 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 2, 3. LOGS & SYSTEM MONITOR */}
+      {/* LOGS & SYSTEM MONITOR */}
       <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Smart Money & Whale Feed */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-xs font-bold text-cyan-400 mb-2">🐋 Smart Money &amp; Whale Feed</h2>
           <div className="bg-slate-950 p-2.5 rounded-lg h-36 overflow-y-auto text-[10px] font-mono text-cyan-300 space-y-1 border border-slate-800/60">
@@ -621,7 +707,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* System Console Logs */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl">
           <h2 className="text-xs font-bold text-slate-300 mb-2">⚡ System Console Logs</h2>
           <div className="bg-slate-950 p-2.5 rounded-lg h-36 overflow-y-auto text-[10px] font-mono text-slate-400 space-y-1 border border-slate-800/60">
@@ -636,4 +721,3 @@ export default function Home() {
     </div>
   );
 }
-       
