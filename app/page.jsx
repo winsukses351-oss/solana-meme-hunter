@@ -237,6 +237,17 @@ export default function Home() {
     return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
   };
 
+  // MARKET SCANNER LOOP
+  useEffect(() => {
+    if (!isRunning || isEmergencyKilled) return;
+
+    const interval = setInterval(() => {
+      scanMarket();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [isRunning, isEmergencyKilled, minAiScoreFilter, minLiquidityFilter, maxPositions]);
+
   // MARKET SCANNER
   const scanMarket = async () => {
     if (isEmergencyKilledRef.current || autoPausedRef.current) return;
@@ -282,7 +293,7 @@ export default function Home() {
       time: new Date().toLocaleTimeString('id-ID')
     };
 
-    setScannedTokens((prev) => [newToken, ...prev.slice(0, 5)]);
+    setScannedTokens((prev) => [newToken, ...prev.slice(0, 9)]);
 
     if (smartMoneyScore > 75) {
       const wallet = generateWalletAddress();
@@ -580,6 +591,83 @@ export default function Home() {
         </div>
       </div>
 
+      {/* ACTIVE TRADES & SCANNED TOKENS */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+        {/* ACTIVE TRADES TABLE */}
+        <div style={{ backgroundColor: '#0f172a', padding: '15px', borderRadius: '6px', border: '1px solid #1e293b' }}>
+          <h3 style={{ marginTop: 0, color: '#38bdf8', fontSize: '16px' }}>📊 Active Real Positions ({activeTrades.length})</h3>
+          <div style={{ overflowX: 'auto', maxHeight: '250px' }}>
+            <table style={{ width: '100%', fontSize: '11px', textAlign: 'left', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+                  <th style={{ padding: '6px' }}>Symbol</th>
+                  <th style={{ padding: '6px' }}>DEX</th>
+                  <th style={{ padding: '6px' }}>Entry</th>
+                  <th style={{ padding: '6px' }}>Current</th>
+                  <th style={{ padding: '6px' }}>Size ($)</th>
+                  <th style={{ padding: '6px' }}>PnL (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeTrades.length === 0 ? (
+                  <tr><td colSpan="6" style={{ padding: '10px', color: '#64748b', textAlign: 'center' }}>Tidak ada posisi aktif saat ini</td></tr>
+                ) : (
+                  activeTrades.map((trade) => (
+                    <tr key={trade.tradeId} style={{ borderBottom: '1px solid #1e293b' }}>
+                      <td style={{ padding: '6px', fontWeight: 'bold', color: '#f8fafc' }}>${trade.symbol}</td>
+                      <td style={{ padding: '6px', color: '#94a3b8' }}>{trade.dex}</td>
+                      <td style={{ padding: '6px' }}>${trade.entryPrice}</td>
+                      <td style={{ padding: '6px' }}>${trade.currentPrice.toFixed(6)}</td>
+                      <td style={{ padding: '6px' }}>${trade.positionSizeUSD}</td>
+                      <td style={{ padding: '6px', fontWeight: 'bold', color: trade.pnlPercent >= 0 ? '#10b981' : '#ef4444' }}>
+                        {trade.pnlPercent >= 0 ? '+' : ''}{trade.pnlPercent}% (${trade.pnlUSD})
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* SCANNED TOKENS FEED */}
+        <div style={{ backgroundColor: '#0f172a', padding: '15px', borderRadius: '6px', border: '1px solid #1e293b' }}>
+          <h3 style={{ marginTop: 0, color: '#38bdf8', fontSize: '16px' }}>🎯 Real-time Market Scanner</h3>
+          <div style={{ overflowX: 'auto', maxHeight: '250px' }}>
+            <table style={{ width: '100%', fontSize: '11px', textAlign: 'left', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #334155', color: '#94a3b8' }}>
+                  <th style={{ padding: '6px' }}>Time</th>
+                  <th style={{ padding: '6px' }}>Symbol</th>
+                  <th style={{ padding: '6px' }}>DEX</th>
+                  <th style={{ padding: '6px' }}>Price</th>
+                  <th style={{ padding: '6px' }}>Liquidity</th>
+                  <th style={{ padding: '6px' }}>AI Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scannedTokens.length === 0 ? (
+                  <tr><td colSpan="6" style={{ padding: '10px', color: '#64748b', textAlign: 'center' }}>Memindai pasar Solana...</td></tr>
+                ) : (
+                  scannedTokens.map((token) => (
+                    <tr key={token.id} style={{ borderBottom: '1px solid #1e293b' }}>
+                      <td style={{ padding: '6px', color: '#64748b' }}>{token.time}</td>
+                      <td style={{ padding: '6px', fontWeight: 'bold', color: '#f8fafc' }}>${token.symbol}</td>
+                      <td style={{ padding: '6px', color: '#38bdf8' }}>{token.dex}</td>
+                      <td style={{ padding: '6px' }}>${token.price}</td>
+                      <td style={{ padding: '6px' }}>${token.liquidity.toLocaleString()}</td>
+                      <td style={{ padding: '6px', fontWeight: 'bold', color: token.opportunityScore >= 80 ? '#10b981' : '#f59e0b' }}>
+                        {token.opportunityScore}/100
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       {/* DASHBOARD CONTROLS & LOGS */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
         {/* CONFIG PANEL */}
@@ -595,6 +683,14 @@ export default function Home() {
               <input type="number" value={maxPositions} onChange={(e) => setMaxPositions(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
             </label>
             <label>
+              Min Liquidity Filter ($):
+              <input type="number" value={minLiquidityFilter} onChange={(e) => setMinLiquidityFilter(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
+            <label>
+              Min AI Score Filter:
+              <input type="number" value={minAiScoreFilter} onChange={(e) => setMinAiScoreFilter(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
+            <label>
               Take Profit Target (%):
               <input type="number" value={takeProfit} onChange={(e) => setTakeProfit(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
             </label>
@@ -607,24 +703,82 @@ export default function Home() {
               <input type="number" value={trailingStop} onChange={(e) => setTrailingStop(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
             </label>
             <label>
+              Stagnant Time Limit (Minutes):
+              <input type="number" value={stagnantTimeLimitMinutes} onChange={(e) => setStagnantTimeLimitMinutes(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
+            <label>
+              Slippage Tolerance (%):
+              <input type="number" step="0.1" value={slippage} onChange={(e) => setSlippage(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
+            <label>
               Helius RPC Endpoint:
               <input type="text" value={rpcEndpoint} onChange={(e) => setRpcEndpoint(e.target.value)} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
             </label>
+
+            <hr style={{ borderColor: '#1e293b', margin: '10px 0' }} />
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input type="checkbox" checked={enableTakeProfit} onChange={(e) => setEnableTakeProfit(e.target.checked)} />
+                Take Profit
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input type="checkbox" checked={enableStopLoss} onChange={(e) => setEnableStopLoss(e.target.checked)} />
+                Stop Loss
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input type="checkbox" checked={enableTrailingStop} onChange={(e) => setEnableTrailingStop(e.target.checked)} />
+                Trailing Stop
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input type="checkbox" checked={enablePartialTP} onChange={(e) => setEnablePartialTP(e.target.checked)} />
+                Partial TP
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input type="checkbox" checked={enableBreakEvenProtect} onChange={(e) => setEnableBreakEvenProtect(e.target.checked)} />
+                Break-Even
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <input type="checkbox" checked={enableAntiRug} onChange={(e) => setEnableAntiRug(e.target.checked)} />
+                Anti-Rug Guard
+              </label>
+            </div>
           </div>
         </div>
 
         {/* LOGS PANEL */}
-        <div style={{ backgroundColor: '#0f172a', padding: '15px', borderRadius: '6px', border: '1px solid #1e293b' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <h3 style={{ margin: 0, color: '#38bdf8', fontSize: '16px' }}>📜 System Activity Logs</h3>
-            <button onClick={exportAnalyticsCSV} style={{ backgroundColor: '#334155', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
-              📥 Export CSV
-            </button>
+        <div style={{ backgroundColor: '#0f172a', padding: '15px', borderRadius: '6px', border: '1px solid #1e293b', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#38bdf8', fontSize: '16px' }}>📜 System Activity Logs</h3>
+              <button onClick={exportAnalyticsCSV} style={{ backgroundColor: '#334155', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
+                📥 Export CSV
+              </button>
+            </div>
+            <div style={{ backgroundColor: '#020617', padding: '10px', borderRadius: '4px', height: '220px', overflowY: 'auto', fontSize: '11px', border: '1px solid #1e293b' }}>
+              {systemLogs.length === 0 ? <span style={{ color: '#475569' }}>Belum ada log aktivitas...</span> : systemLogs.map((log, idx) => (
+                <div key={idx} style={{ marginBottom: '4px', borderBottom: '1px solid #0f172a', paddingBottom: '2px' }}>{log}</div>
+              ))}
+            </div>
           </div>
-          <div style={{ backgroundColor: '#020617', padding: '10px', borderRadius: '4px', height: '280px', overflowY: 'auto', fontSize: '11px', border: '1px solid #1e293b' }}>
-            {systemLogs.length === 0 ? <span style={{ color: '#475569' }}>Belum ada log aktivitas...</span> : systemLogs.map((log, idx) => (
-              <div key={idx} style={{ marginBottom: '4px', borderBottom: '1px solid #0f172a', paddingBottom: '2px' }}>{log}</div>
-            ))}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div>
+              <h4 style={{ margin: '0 0 5px 0', color: '#f59e0b', fontSize: '13px' }}>🐳 Whale Logs</h4>
+              <div style={{ backgroundColor: '#020617', padding: '8px', borderRadius: '4px', height: '120px', overflowY: 'auto', fontSize: '10px', border: '1px solid #1e293b' }}>
+                {whaleLogs.length === 0 ? <span style={{ color: '#475569' }}>Tidak ada pergerakan whale...</span> : whaleLogs.map((log, idx) => (
+                  <div key={idx} style={{ marginBottom: '3px' }}>{log}</div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h4 style={{ margin: '0 0 5px 0', color: '#a855f7', fontSize: '13px' }}>🧠 Smart Money Logs</h4>
+              <div style={{ backgroundColor: '#020617', padding: '8px', borderRadius: '4px', height: '120px', overflowY: 'auto', fontSize: '10px', border: '1px solid #1e293b' }}>
+                {smartMoneyLogs.length === 0 ? <span style={{ color: '#475569' }}>Tidak ada smart money activity...</span> : smartMoneyLogs.map((log, idx) => (
+                  <div key={idx} style={{ marginBottom: '3px' }}>{log}</div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
