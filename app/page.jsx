@@ -102,7 +102,7 @@ export default function Home() {
     }, 4000);
   };
 
-  // 5. SOUND SYNTHESIZER (PURE JAVASCRIPT COMPATIBLE)
+  // 5. SOUND SYNTHESIZER (DIPERBAIKI: MURNI JAVASCRIPT TANPA SINTAKS TYPESCRIPT)
   const playTingSound = () => {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
