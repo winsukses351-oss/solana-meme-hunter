@@ -1,6 +1,5 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { Connection, PublicKey, VersionedTransaction } from '@solana/web3.js';
 
 export default function Home() {
   // 1. ENGINE & SECURITY STATES
@@ -8,22 +7,14 @@ export default function Home() {
   const [isEmergencyKilled, setIsEmergencyKilled] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const MASTER_PASSWORD = 'erwinirawan1234567890';
+  const MASTER_PASSWORD = 'erwinirawan';
 
-  // 2. SOLANA WEB3 & HELIUS RPC STATES
+  // 2. SOLANA & HELIUS RPC STATES
   const [rpcEndpoint, setRpcEndpoint] = useState('https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY');
   const [walletAddress, setWalletAddress] = useState('');
   const [isWalletConnected, setIsWalletConnected] = useState(false);
   const [realSolBalance, setRealSolBalance] = useState(0);
   const [solPriceUSD, setSolPriceUSD] = useState(0);
-
-  const connectionRef = useRef(null);
-
-  useEffect(() => {
-    if (rpcEndpoint) {
-      connectionRef.current = new Connection(rpcEndpoint, 'confirmed');
-    }
-  }, [rpcEndpoint]);
 
   // 3. FETCH REAL-TIME SOL PRICE & BALANCE VIA HELIUS RPC
   const fetchRealSolBalance = async (address) => {
@@ -45,13 +36,12 @@ export default function Home() {
         setRealSolBalance(parseFloat(solVal.toFixed(4)));
       }
     } catch (err) {
-      console.log('Helius RPC Balance Fetch Error:', err);
+      console.log('RPC Balance Fetch Error:', err);
     }
   };
 
   useEffect(() => {
-    const fetchSolPriceViaRPC = async () => {
-      if (!rpcEndpoint) return;
+    const fetchSolPrice = async () => {
       try {
         const jupRes = await fetch('https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112');
         const jupData = await jupRes.json();
@@ -62,13 +52,13 @@ export default function Home() {
       }
     };
 
-    fetchSolPriceViaRPC();
+    fetchSolPrice();
     if (isWalletConnected && walletAddress) {
       fetchRealSolBalance(walletAddress);
     }
 
     const interval = setInterval(() => {
-      fetchSolPriceViaRPC();
+      fetchSolPrice();
       if (isWalletConnected && walletAddress) {
         fetchRealSolBalance(walletAddress);
       }
@@ -88,30 +78,22 @@ export default function Home() {
   };
 
   // 5. PARAMETERS & CONFIGS
-  const [equity, setEquity] = useState(0);
   const [riskPercent, setRiskPercent] = useState(20);
   const [maxPositions, setMaxPositions] = useState(5);
   const [minLiquidityFilter, setMinLiquidityFilter] = useState(5000);
   const [minAiScoreFilter, setMinAiScoreFilter] = useState(80);
-  const [stagnantTimeLimitMinutes, setStagnantTimeLimitMinutes] = useState(10);
-  const [slippageBps, setSlippageBps] = useState(100); // 100 bps = 1%
-  const [autoPaused, setAutoPaused] = useState(false);
+  const [slippageBps, setSlippageBps] = useState(100);
 
   const [enableTakeProfit, setEnableTakeProfit] = useState(true);
   const [takeProfit, setTakeProfit] = useState(50);
   const [enableStopLoss, setEnableStopLoss] = useState(true);
   const [stopLoss, setStopLoss] = useState(15);
-  const [enableTrailingStop, setEnableTrailingStop] = useState(true);
-  const [trailingStop, setTrailingStop] = useState(10);
-  const [enableAntiRug, setEnableAntiRug] = useState(true);
 
   // DATA STATES
   const [scannedTokens, setScannedTokens] = useState([]);
   const [activeTrades, setActiveTrades] = useState([]);
   const [closedTrades, setClosedTrades] = useState([]);
   const [systemLogs, setSystemLogs] = useState([]);
-
-  const blacklistKeywords = ['TEST', 'RUG', 'SCAM', 'HACK', 'FAKE', 'DRAIN'];
 
   const addSystemLog = (msg) => setSystemLogs((prev) => [`[${new Date().toLocaleTimeString('id-ID')}] ${msg}`, ...prev.slice(0, 99)]);
 
@@ -142,14 +124,6 @@ export default function Home() {
     }
   };
 
-  const disconnectWallet = () => {
-    if (window.solana) window.solana.disconnect();
-    setWalletAddress('');
-    setIsWalletConnected(false);
-    setRealSolBalance(0);
-    addSystemLog('🔌 [WALLET] Disconnected');
-  };
-
   const handleToggleEngine = () => {
     if (isRunning) {
       setIsRunning(false);
@@ -174,12 +148,11 @@ export default function Home() {
     }
   };
 
-  // REAL JUPITER SWAP EXECUTION ENGINE
+  // REAL JUPITER SWAP EXECUTION (NATIVE PHANTOM PROVIDER)
   const executeJupiterRealSwap = async (inputMint, outputMint, amountInLamports, tradeType, symbol) => {
     try {
       addSystemLog(`⚡ [JUPITER API] Request Quote ${tradeType} $${symbol}...`);
       
-      // 1. Get Quote dari Jupiter
       const quoteRes = await fetch(
         `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountInLamports}&slippageBps=${slippageBps}`
       );
@@ -189,7 +162,6 @@ export default function Home() {
         throw new Error(quoteResponse?.error || 'Gagal mengambil quote dari Jupiter');
       }
 
-      // 2. Request Transaction Payload
       const swapRes = await fetch('https://quote-api.jup.ag/v6/swap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -202,16 +174,16 @@ export default function Home() {
 
       const { swapTransaction } = await swapRes.json();
 
-      // 3. Request Wallet Sign & Send
       if (typeof window !== 'undefined' && window.solana) {
-        addSystemLog(`📜 [BLOCKCHAIN] Meminta konfirmasi transaksi On-Chain untuk $${symbol}...`);
+        addSystemLog(`📜 [BLOCKCHAIN] Meminta konfirmasi transaksi Phantom untuk $${symbol}...`);
         
-        const swapTransactionBuf = Buffer.from(swapTransaction, 'base64');
-        let transaction = VersionedTransaction.deserialize(swapTransactionBuf);
+        // Mengirimkan transaksi encoded base64 ke Provider Phantom
+        const signedTx = await window.solana.signAndSendTransaction({
+          message: swapTransaction
+        });
 
-        const signedTx = await window.solana.signAndSendTransaction(transaction);
         addSystemLog(`✅ [ON-CHAIN SUCCESS] Tx Hash: ${signedTx.signature.slice(0, 10)}...`);
-        triggerNotification(`REAL SWAP ${tradeType}`, `Berhasil On-Chain! Tx: ${signedTx.signature.slice(0, 8)}...`);
+        triggerNotification(`REAL SWAP ${tradeType}`, `Berhasil On-Chain!`);
 
         if (walletAddress) fetchRealSolBalance(walletAddress);
         return signedTx.signature;
@@ -226,16 +198,14 @@ export default function Home() {
   // BUY EXECUTION
   const executeAutoBuy = async (token) => {
     if (!isWalletConnected || realSolBalance < 0.01) {
-      addSystemLog('⚠️ [ERROR] Saldo SOL tidak mencukupi untuk Real Trade!');
+      addSystemLog('⚠️ [ERROR] Saldo SOL tidak mencukupi!');
       return;
     }
 
     const solToTrade = (realSolBalance * (riskPercent / 100));
     const lamports = Math.floor(solToTrade * 1e9);
-
     const SOL_MINT = 'So11111111111111111111111111111111111111112';
-    
-    // Eksekusi Swap SOL ke Token Mint
+
     const txHash = await executeJupiterRealSwap(SOL_MINT, token.mint, lamports, 'BUY', token.symbol);
 
     if (txHash) {
@@ -244,10 +214,8 @@ export default function Home() {
         tradeId: Date.now(),
         entryPrice: token.price,
         currentPrice: token.price,
-        highestPrice: token.price,
         solInvested: solToTrade,
         txHash,
-        pnlPercent: 0,
         entryTimestamp: Date.now()
       };
       setActiveTrades((prev) => [newTrade, ...prev]);
@@ -260,10 +228,10 @@ export default function Home() {
 
     const interval = setInterval(() => {
       scanMarket();
-    }, 4000);
+    }, 5000);
 
     return () => clearInterval(interval);
-  }, [isRunning, isEmergencyKilled, minAiScoreFilter, minLiquidityFilter, maxPositions]);
+  }, [isRunning, isEmergencyKilled]);
 
   const scanMarket = async () => {
     if (isEmergencyKilledRef.current) return;
@@ -304,7 +272,6 @@ export default function Home() {
   // SELL / EXIT POSITION
   const closeTradePosition = async (trade, reason) => {
     const SOL_MINT = 'So11111111111111111111111111111111111111112';
-    // Eksekusi Sell dari Token Mint ke SOL (0 = Sell All Balance)
     const txHash = await executeJupiterRealSwap(trade.mint, SOL_MINT, 0, 'SELL', trade.symbol);
 
     if (txHash) {
@@ -335,7 +302,6 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [isRunning, activeTrades, takeProfit, stopLoss, isEmergencyKilled]);
 
-  // EMERGENCY KILL
   const handleEmergencyKill = () => {
     setIsRunning(false);
     setIsEmergencyKilled(true);
@@ -357,7 +323,7 @@ export default function Home() {
       {/* HEADER */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '15px', marginBottom: '20px' }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: '24px', color: '#38bdf8' }}>⚡ SOLANA HUNTER - REAL ON-CHAIN MODE</h1>
+          <h1 style={{ margin: 0, fontSize: '24px', color: '#38bdf8' }}>⚡ SOLANA HUNTER - REAL MODE</h1>
           <p style={{ margin: '5px 0 0 0', fontSize: '12px', color: '#10b981' }}>Connected directly to Jupiter V6 API & Solana Mainnet</p>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
