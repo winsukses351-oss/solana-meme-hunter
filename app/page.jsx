@@ -102,10 +102,10 @@ export default function Home() {
     }, 4000);
   };
 
-  // 5. SOUND SYNTHESIZER
+  // 5. SOUND SYNTHESIZER (PURE JAVASCRIPT COMPATIBLE)
   const playTingSound = () => {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
@@ -200,8 +200,8 @@ export default function Home() {
   // WALLET CONNECTOR
   const connectWallet = async () => {
     try {
-      if (typeof window !== 'undefined' && (window as any).solana) {
-        const response = await (window as any).solana.connect();
+      if (typeof window !== 'undefined' && window.solana) {
+        const response = await window.solana.connect();
         const pubKey = response.publicKey.toString();
         setWalletAddress(pubKey);
         setIsWalletConnected(true);
@@ -218,7 +218,7 @@ export default function Home() {
   };
 
   const disconnectWallet = () => {
-    if ((window as any).solana) (window as any).solana.disconnect();
+    if (window.solana) window.solana.disconnect();
     setWalletAddress('');
     setIsWalletConnected(false);
     setRealSolBalance(0);
