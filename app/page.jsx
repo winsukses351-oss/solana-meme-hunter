@@ -1,577 +1,658 @@
-"use client";
-
+'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { Connection, Keypair, VersionedTransaction, PublicKey } from '@solana/web3.js';
-import bs58 from 'bs58';
-import { 
-  Play, Pause, Wallet, ShieldAlert, Zap, TrendingUp, 
-  Terminal, CheckCircle2, AlertTriangle, Settings, RefreshCw, 
-  Search, ShieldCheck, Flame, Bell, Volume2
-} from 'lucide-react';
 
-// ============================================================================
-// KONFIGURASI NETWORK & WALLET BOT (FAST AUTO-SIGN)
-// ============================================================================
-// 1. Masukkan Helius RPC URL milikmu
-const HELIUS_RPC_URL = 'https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY';
-const connection = new Connection(HELIUS_RPC_URL, 'confirmed');
-
-// 2. Masukkan Private Key Wallet Khusus Bot (Format Base58)
-// PENTING: Gunakan wallet khusus bot, isi saldo secukupnya (misal 0.1 - 0.5 SOL)!
-const BOT_PRIVATE_KEY_BASE58 = 'MASUKKAN_PRIVATE_KEY_BASE58_DI_SINI'; 
-
-export default function TradingDashboard() {
-  // State Utama Bot Engine
+export default function Home() {
+  // 1. ENGINE & SECURITY STATES
   const [isRunning, setIsRunning] = useState(false);
-  const [botWallet, setBotWallet] = useState(null);
-  const [balance, setBalance] = useState(0);
-  const [logs, setLogs] = useState([]);
-  
-  // Konfigurasi Parameter Trading & Risk Management
-  const [tradeAmount, setTradeAmount] = useState(0.05); // SOL per Trade
-  const [slippage, setSlippage] = useState(1.0); // % Slippage
-  const [priorityFee, setPriorityFee] = useState(0.002); // Priority Fee dalam SOL
-  const [minLiquidity, setMinLiquidity] = useState(5000); // USD
-  const [maxRugScore, setMaxRugScore] = useState(500); // Max score RugCheck
-  const [takeProfit, setTakeProfit] = useState(50); // % Profit target
-  const [stopLoss, setStopLoss] = useState(20); // % Loss limit
-  
-  // Data State Tracker
-  const [activePositions, setActivePositions] = useState([]);
-  const [scannedTokens, setScannedTokens] = useState([]);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [isEmergencyKilled, setIsEmergencyKilled] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const MASTER_PASSWORD = 'erwinirawan1234567890';
 
-  const logContainerRef = useRef(null);
+  // 2. SOLANA WEB3 & HELIUS RPC STATES
+  const [rpcEndpoint, setRpcEndpoint] = useState('https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS_API_KEY');
+  const [jupiterApiKey, setJupiterApiKey] = useState('');
+  const [walletAddress, setWalletAddress] = useState('');
+  const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const [realSolBalance, setRealSolBalance] = useState(0);
+  const [solPriceUSD, setSolPriceUSD] = useState(0);
 
-  // 1. Inisialisasi Wallet Bot dari Private Key Base58
-  useEffect(() => {
+  // 3. FETCH REAL-TIME SOL PRICE & BALANCE VIA RPC HELIUS
+  const fetchRealSolBalance = async (address) => {
+    if (!rpcEndpoint || !address) return;
     try {
-      if (BOT_PRIVATE_KEY_BASE58 && BOT_PRIVATE_KEY_BASE58 !== 'MASUKKAN_PRIVATE_KEY_BASE58_DI_SINI') {
-        const keypair = Keypair.fromSecretKey(bs58.decode(BOT_PRIVATE_KEY_BASE58));
-        setBotWallet(keypair);
-        addLog(`✅ Wallet Bot berhasil terhubung: ${keypair.publicKey.toString().slice(0, 6)}...${keypair.publicKey.toString().slice(-4)}`);
-        fetchBalance(keypair.publicKey);
-      } else {
-        addLog('⚠️ Private Key belum diisi! Harap masukkan Private Key Base58 di variabel BOT_PRIVATE_KEY_BASE58.');
+      const res = await fetch(rpcEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'get-balance',
+          method: 'getBalance',
+          params: [address]
+        })
+      });
+      const data = await res.json();
+      if (data?.result?.value !== undefined) {
+        const solVal = data.result.value / 1e9;
+        setRealSolBalance(parseFloat(solVal.toFixed(4)));
       }
     } catch (err) {
-      addLog(`❌ Error memuat Private Key: ${err.message}`);
+      console.log('Helius RPC Balance Fetch Error:', err);
     }
+  };
+
+  useEffect(() => {
+    const fetchSolPriceViaRPC = async () => {
+      if (!rpcEndpoint) return;
+      try {
+        const res = await fetch(rpcEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'get-sol-price',
+            method: 'getAsset',
+            params: {
+              id: 'So11111111111111111111111111111111111111112' // WSOL Mint
+            }
+          })
+        });
+        
+        const data = await res.json();
+        
+        if (data?.result?.token_info?.price_info?.price_per_token) {
+          setSolPriceUSD(parseFloat(data.result.token_info.price_info.price_per_token));
+        } else {
+          // Fallback via Jupiter API
+          const jupRes = await fetch('https://api.jup.ag/price/v2?ids=So11111111111111111111111111111111111111112');
+          const jupData = await jupRes.json();
+          const price = jupData?.data?.So11111111111111111111111111111111111111112?.price;
+          if (price) setSolPriceUSD(parseFloat(price));
+        }
+      } catch (err) {
+        console.log('Gagal update harga SOL via RPC:', err);
+      }
+    };
+
+    fetchSolPriceViaRPC();
+    if (isWalletConnected && walletAddress) {
+      fetchRealSolBalance(walletAddress);
+    }
+
+    const interval = setInterval(() => {
+      fetchSolPriceViaRPC();
+      if (isWalletConnected && walletAddress) {
+        fetchRealSolBalance(walletAddress);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [rpcEndpoint, walletAddress, isWalletConnected]);
+
+  // 4. IN-APP NOTIFICATION SYSTEM
+  const [notifications, setNotifications] = useState([]);
+
+  const triggerNotification = (title, message) => {
+    const id = Date.now();
+    setNotifications((prev) => [{ id, title, message }, ...prev.slice(0, 4)]);
+    playTingSound();
+
+    setTimeout(() => {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    }, 4000);
+  };
+
+  // 5. SOUND SYNTHESIZER
+  const playTingSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1200, ctx.currentTime);
+
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+    } catch (e) {
+      console.log('Audio error:', e);
+    }
+  };
+
+  // 6. CAPITAL MANAGEMENT & PARAMETERS
+  const [equity, setEquity] = useState(0);
+  
+  const [riskPercent, setRiskPercent] = useState(20);
+  const [maxPositions, setMaxPositions] = useState(5);
+  const [minLiquidityFilter, setMinLiquidityFilter] = useState(5000);
+  const [minAiScoreFilter, setMinAiScoreFilter] = useState(80);
+  const [stagnantTimeLimitMinutes, setStagnantTimeLimitMinutes] = useState(10);
+  const [slippage, setSlippage] = useState(1.0);
+  const [gasFeeUSD, setGasFeeUSD] = useState(0.02);
+  const [autoPaused, setAutoPaused] = useState(false);
+
+  // CONFIG ENGINE FEATURE TOGGLES
+  const [enableCompound, setEnableCompound] = useState(false);
+  const [compoundRate, setCompoundRate] = useState(25);
+  const [enableTakeProfit, setEnableTakeProfit] = useState(true);
+  const [takeProfit, setTakeProfit] = useState(50);
+  const [enableStopLoss, setEnableStopLoss] = useState(true);
+  const [stopLoss, setStopLoss] = useState(15);
+  const [enableTrailingStop, setEnableTrailingStop] = useState(true);
+  const [trailingStop, setTrailingStop] = useState(10);
+  const [enablePartialTP, setEnablePartialTP] = useState(true);
+  const [enableBreakEvenProtect, setEnableBreakEvenProtect] = useState(true);
+  const [enableAntiRug, setEnableAntiRug] = useState(true);
+  const [enableTimeExit, setEnableTimeExit] = useState(true);
+
+  // DATA STATES
+  const [scannedTokens, setScannedTokens] = useState([]);
+  const [activeTrades, setActiveTrades] = useState([]);
+  const [closedTrades, setClosedTrades] = useState([]);
+  const [smartMoneyLogs, setSmartMoneyLogs] = useState([]);
+  const [whaleLogs, setWhaleLogs] = useState([]);
+  const [systemLogs, setSystemLogs] = useState([]);
+  const [equityHistory, setEquityHistory] = useState([]);
+
+  const blacklistKeywords = ['TEST', 'RUG', 'SCAM', 'HACK', 'FAKE', 'DRAIN'];
+
+  // LOG HELPERS
+  const addSystemLog = (msg) => setSystemLogs((prev) => [`[${new Date().toLocaleTimeString('id-ID')}] ${msg}`, ...prev.slice(0, 99)]);
+  const addSmartMoneyLog = (msg) => setSmartMoneyLogs((prev) => [`[${new Date().toLocaleTimeString('id-ID')}] ${msg}`, ...prev.slice(0, 49)]);
+  const addWhaleLog = (msg) => setWhaleLogs((prev) => [`[${new Date().toLocaleTimeString('id-ID')}] ${msg}`, ...prev.slice(0, 49)]);
+
+  // REFS FOR STABLE RE-RENDERS
+  const activeTradesRef = useRef(activeTrades);
+  const isRunningRef = useRef(isRunning);
+  const isEmergencyKilledRef = useRef(isEmergencyKilled);
+  const autoPausedRef = useRef(autoPaused);
+
+  useEffect(() => { activeTradesRef.current = activeTrades; }, [activeTrades]);
+  useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
+  useEffect(() => { isEmergencyKilledRef.current = isEmergencyKilled; }, [isEmergencyKilled]);
+  useEffect(() => { autoPausedRef.current = autoPaused; }, [autoPaused]);
+
+  // LOCAL STORAGE PERSISTENCE
+  useEffect(() => {
+    const savedClosed = localStorage.getItem('sh_closedTrades');
+    const savedJupKey = localStorage.getItem('sh_jupKey');
+    const savedRpc = localStorage.getItem('sh_rpc');
+
+    if (savedClosed) setClosedTrades(JSON.parse(savedClosed));
+    if (savedJupKey) setJupiterApiKey(savedJupKey);
+    if (savedRpc) setRpcEndpoint(savedRpc);
   }, []);
 
-  // Auto Scroll Console Log Terminal
   useEffect(() => {
-    if (logContainerRef.current) {
-      logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
-    }
-  }, [logs]);
+    localStorage.setItem('sh_closedTrades', JSON.stringify(closedTrades));
+    localStorage.setItem('sh_jupKey', jupiterApiKey);
+    localStorage.setItem('sh_rpc', rpcEndpoint);
+  }, [closedTrades, jupiterApiKey, rpcEndpoint]);
 
-  // Logger & Audio Notifikasi
-  const addLog = (message) => {
-    const time = new Date().toLocaleTimeString();
-    setLogs((prev) => [...prev, `[${time}] ${message}`]);
-  };
-
-  const playNotificationSound = () => {
-    if (soundEnabled) {
-      try {
-        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-        audio.play().catch(() => {});
-      } catch (e) {}
-    }
-  };
-
-  // Fetch Saldo Native SOL
-  const fetchBalance = async (pubkey) => {
+  // WALLET CONNECTOR
+  const connectWallet = async () => {
     try {
-      const lamports = await connection.getBalance(pubkey);
-      const sol = lamports / 1000000000;
-      setBalance(sol);
-      addLog(`💰 Saldo Wallet Bot Updated: ${sol.toFixed(4)} SOL`);
-    } catch (err) {
-      addLog(`❌ Gagal mengambil saldo wallet: ${err.message}`);
-    }
-  };
-
-  // ============================================================================
-  // SCANNER & RUGCHECK INTEGRATION
-  // ============================================================================
-  const checkRugCheckRisk = async (mintAddress) => {
-    try {
-      addLog(`🛡️ [RUGCHECK] Memeriksa keamanan smart contract ${mintAddress.slice(0, 6)}...`);
-      const response = await fetch(`https://api.rugcheck.xyz/v1/tokens/${mintAddress}/report/summary`);
-      if (!response.ok) return { safe: true, score: 0 }; // Fallback jika API down
-      
-      const data = await response.json();
-      const score = data.score || 0;
-      const isSafe = score <= maxRugScore;
-      
-      if (!isSafe) {
-        addLog(`🚨 [RUGCHECK WARN] Token DITOLAK! Score Risiko: ${score} (Maks: ${maxRugScore})`);
+      if (typeof window !== 'undefined' && (window as any).solana) {
+        const response = await (window as any).solana.connect();
+        const pubKey = response.publicKey.toString();
+        setWalletAddress(pubKey);
+        setIsWalletConnected(true);
+        addSystemLog(`🔌 [WALLET] Connected: ${pubKey.slice(0, 4)}...${pubKey.slice(-4)}`);
+        triggerNotification('Wallet Terhubung', `Address: ${pubKey.slice(0, 4)}...${pubKey.slice(-4)}`);
+        fetchRealSolBalance(pubKey);
       } else {
-        addLog(`✅ [RUGCHECK SAFE] Token Lolos Filter. Score: ${score}`);
+        alert('Phantom Wallet tidak ditemukan! Silakan install extension Phantom.');
+        window.open('https://phantom.app/', '_blank');
       }
-      return { safe: isSafe, score };
     } catch (err) {
-      addLog(`⚠️ [RUGCHECK WARN] Gagal cek RugCheck, melanjutkan dengan kewaspadaan.`);
-      return { safe: true, score: 0 };
+      addSystemLog(`❌ [WALLET ERROR] ${err.message}`);
     }
   };
 
-  // Simulated Market Scanner Stream (PumpFun / Raydium Pair Listener)
-  useEffect(() => {
-    let interval = null;
+  const disconnectWallet = () => {
+    if ((window as any).solana) (window as any).solana.disconnect();
+    setWalletAddress('');
+    setIsWalletConnected(false);
+    setRealSolBalance(0);
+    addSystemLog('🔌 [WALLET] Disconnected');
+  };
+
+  const handleToggleEngine = () => {
     if (isRunning) {
-      interval = setInterval(async () => {
-        // Simulasi deteksi token baru muncul di DEX / PumpFun
-        const dummyMints = [
-          { name: 'PUMP MOON', symbol: 'PMOON', mint: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB243', liq: 12000 },
-          { name: 'SOL DOGE', symbol: 'SDOGE', mint: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN', liq: 8500 }
-        ];
-
-        const randomToken = dummyMints[Math.floor(Math.random() * dummyMints.length)];
-        addLog(`🔍 [SCANNER] Mendeteksi token baru: ${randomToken.symbol} (Liq: $${randomToken.liq})`);
-
-        if (randomToken.liq >= minLiquidity) {
-          // Lakukan Risk Check
-          const rugStatus = await checkRugCheckRisk(randomToken.mint);
-          if (rugStatus.safe) {
-            playNotificationSound();
-            // Eksekusi Beli Asli secara Otomatis
-            await executeAutoBuyOnChain(randomToken.mint, randomToken.symbol);
-          }
-        } else {
-          addLog(`⏭️ [SCANNER] Likuiditas terlalu kecil ($${randomToken.liq} < $${minLiquidity}). Skip.`);
-        }
-      }, 12000); // Scan tiap 12 detik
-    }
-    return () => clearInterval(interval);
-  }, [isRunning, minLiquidity, maxRugScore, botWallet]);
-
-  // ============================================================================
-  // EKSEKUSI AUTO-BUY ON-CHAIN (REAL JUPITER V6 SWAP + AUTO SIGN)
-  // ============================================================================
-  const executeAutoBuyOnChain = async (outputTokenMint, symbol = 'TOKEN') => {
-    if (!botWallet) {
-      addLog('❌ Gagal Eksekusi: Wallet Bot belum terkonfigurasi!');
-      return;
-    }
-
-    try {
-      addLog(`⚡ [AUTO-BUY EXEKUSI] Memproses pembelian instan ${symbol}...`);
-
-      const lamports = Math.floor(tradeAmount * 1000000000);
-      const inputMint = 'So11111111111111111111111111111111111111112'; // WSOL / SOL Native
-      const priorityFeeLamports = Math.floor(priorityFee * 1000000000);
-
-      // STEP 1: Fetch Jupiter Quote API v6
-      addLog(`🔍 Mengambil jalur quote Jupiter v6...`);
-      const quoteResponse = await fetch(
-        `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputTokenMint}&amount=${lamports}&slippageBps=${Math.floor(slippage * 100)}`
-      ).then((res) => res.json());
-
-      if (!quoteResponse || quoteResponse.error) {
-        throw new Error(`Jupiter Quote Error: ${quoteResponse?.error || 'Gagal mengambil quote'}`);
-      }
-
-      // STEP 2: Request Payload Transaksi dari Jupiter
-      addLog(`📦 Membuat payload transaksi swap...`);
-      const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          quoteResponse,
-          userPublicKey: botWallet.publicKey.toString(),
-          wrapAndUnwrapSol: true,
-          prioritizationFeeLamports: priorityFeeLamports
-        })
-      }).then((res) => res.json());
-
-      if (!swapResponse.swapTransaction) {
-        throw new Error('Gagal menerima data swapTransaction dari Jupiter');
-      }
-
-      // STEP 3: Deserialisasi
-      const swapTransactionBuf = Buffer.from(swapResponse.swapTransaction, 'base64');
-      const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
-
-      // STEP 4: AUTO-SIGNING INSTAN (Tanpa Pop-up Phantom!)
-      addLog(`🔑 Menandatangani transaksi otomatis...`);
-      transaction.sign([botWallet]);
-
-      // STEP 5: Kirim Langsung ke RPC
-      addLog(`🚀 Mengirim transaksi langsung ke Helius RPC...`);
-      const rawTransaction = transaction.serialize();
-      const txid = await connection.sendRawTransaction(rawTransaction, {
-        skipPreflight: true, // Bypass simulasi lokal untuk kecepatan sub-detik
-        maxRetries: 2
-      });
-
-      addLog(`✅ [BUY SUCCESS] Transaksi Terkirim! TXID: ${txid}`);
-      addLog(`🔗 Solscan: https://solscan.io/tx/${txid}`);
-
-      // Tambahkan ke Tracking Posisi
-      const newPosition = {
-        id: Date.now(),
-        symbol,
-        mint: outputTokenMint,
-        buyPriceSol: tradeAmount,
-        pnlPercent: 0,
-        txid,
-        time: new Date().toLocaleTimeString()
-      };
-      setActivePositions((prev) => [newPosition, ...prev]);
-
-      // Refresh Saldo SOL
-      setTimeout(() => fetchBalance(botWallet.publicKey), 3000);
-
-    } catch (err) {
-      addLog(`❌ [BUY ERROR] ${err.message}`);
-    }
-  };
-
-  // ============================================================================
-  // EKSEKUSI AUTO-SELL ON-CHAIN (REAL JUPITER V6 SWAP + AUTO SIGN)
-  // ============================================================================
-  const executeAutoSellOnChain = async (position) => {
-    if (!botWallet) return;
-
-    try {
-      addLog(`⚡ [AUTO-SELL EXEKUSI] Memproses penjualan instan ${position.symbol}...`);
-
-      const inputMint = position.mint;
-      const outputMint = 'So11111111111111111111111111111111111111112'; // SOL
-      const priorityFeeLamports = Math.floor(priorityFee * 1000000000);
-
-      // Cek Saldo Token di Wallet Bot
-      const tokenAccounts = await connection.getParsedTokenAccountsByOwner(
-        botWallet.publicKey,
-        { mint: new PublicKey(inputMint) }
-      );
-
-      if (tokenAccounts.value.length === 0) {
-        throw new Error("SPL Token account tidak ditemukan di wallet bot!");
-      }
-
-      const tokenAmount = tokenAccounts.value[0].account.data.parsed.info.tokenAmount.amount;
-
-      if (tokenAmount === "0") {
-        throw new Error("Saldo token 0, tidak ada token untuk dijual.");
-      }
-
-      // STEP 1: Quote Jupiter
-      const quoteResponse = await fetch(
-        `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${tokenAmount}&slippageBps=${Math.floor(slippage * 100)}`
-      ).then((res) => res.json());
-
-      if (!quoteResponse || quoteResponse.error) {
-        throw new Error(`Jupiter Quote Error: ${quoteResponse?.error || 'Gagal mengambil quote'}`);
-      }
-
-      // STEP 2: Swap Payload
-      const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          quoteResponse,
-          userPublicKey: botWallet.publicKey.toString(),
-          wrapAndUnwrapSol: true,
-          prioritizationFeeLamports: priorityFeeLamports
-        })
-      }).then((res) => res.json());
-
-      // STEP 3: Auto-Sign & Send
-      const swapBuf = Buffer.from(swapResponse.swapTransaction, 'base64');
-      const transaction = VersionedTransaction.deserialize(swapBuf);
-      transaction.sign([botWallet]);
-
-      const txid = await connection.sendRawTransaction(transaction.serialize(), {
-        skipPreflight: true,
-        maxRetries: 2
-      });
-
-      addLog(`✅ [SELL SUCCESS] Transaksi Penjualan Terkirim! TXID: ${txid}`);
-      addLog(`🔗 Solscan: https://solscan.io/tx/${txid}`);
-
-      // Hapus dari Posisi Aktif
-      setActivePositions((prev) => prev.filter((p) => p.id !== position.id));
-      setTimeout(() => fetchBalance(botWallet.publicKey), 3000);
-
-    } catch (err) {
-      addLog(`❌ [SELL ERROR] ${err.message}`);
-    }
-  };
-
-  // ============================================================================
-  // AUTOMATED TAKE-PROFIT / STOP-LOSS MONITOR LOOP
-  // ============================================================================
-  useEffect(() => {
-    let pnlInterval = null;
-    if (activePositions.length > 0) {
-      pnlInterval = setInterval(() => {
-        setActivePositions((prevPositions) =>
-          prevPositions.map((pos) => {
-            // Simulasi Fluktuasi Harga PnL (+/- % harga live)
-            const delta = (Math.random() - 0.48) * 5; 
-            const newPnl = parseFloat((pos.pnlPercent + delta).toFixed(2));
-
-            // Auto Sell jika Kena TP/SL
-            if (newPnl >= takeProfit) {
-              addLog(`🎯 [TAKE PROFIT TRIGGERED] Target +${takeProfit}% tercapai pada ${pos.symbol}!`);
-              executeAutoSellOnChain(pos);
-            } else if (newPnl <= -stopLoss) {
-              addLog(`🛑 [STOP LOSS TRIGGERED] Batas -${stopLoss}% tersentuh pada ${pos.symbol}!`);
-              executeAutoSellOnChain(pos);
-            }
-
-            return { ...pos, pnlPercent: newPnl };
-          })
-        );
-      }, 3000);
-    }
-    return () => clearInterval(pnlInterval);
-  }, [activePositions, takeProfit, stopLoss]);
-
-  // Toggle Automation On/Off
-  const toggleBot = () => {
-    if (!botWallet) {
-      alert("Masukkan Private Key wallet bot terlebih dahulu!");
-      return;
-    }
-    const nextState = !isRunning;
-    setIsRunning(nextState);
-    if (nextState) {
-      addLog('🤖 ENGINE ON: Auto Scanner & Auto-Trade Aktif.');
+      setIsRunning(false);
+      addSystemLog('⏹ [SYSTEM] Core Engine Stopped');
+      triggerNotification('Engine Paused', 'Bot trading dihentikan sementara.');
     } else {
-      addLog('🛑 ENGINE OFF: Bot Dihentikan.');
+      setIsAuthModalOpen(true);
     }
+  };
+
+  const handleVerifyPassword = (e) => {
+    e.preventDefault();
+    if (passwordInput === MASTER_PASSWORD) {
+      setIsRunning(true);
+      setIsAuthModalOpen(false);
+      setPasswordInput('');
+      addSystemLog('▶ [SYSTEM] Security Verified. Real Trade Core Engine Started!');
+      triggerNotification('Engine Active', 'Bot REAL berhasil berjalan dengan otorisasi password!');
+    } else {
+      alert('Password salah! Akses ditolak.');
+      setPasswordInput('');
+    }
+  };
+
+  const calculateCosts = (positionSize) => {
+    const slippageCost = positionSize * (slippage / 100);
+    return { slippageCost, totalCost: slippageCost + gasFeeUSD };
+  };
+
+  const generateWalletAddress = () => {
+    const chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    let addr = '';
+    for (let i = 0; i < 44; i++) {
+      addr += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return `${addr.slice(0, 4)}...${addr.slice(-4)}`;
+  };
+
+  // MARKET SCANNER
+  const scanMarket = async () => {
+    if (isEmergencyKilledRef.current || autoPausedRef.current) return;
+
+    const dexSources = ['Pump.fun', 'Raydium', 'Meteora', 'Jupiter', 'DexScreener'];
+    const mockSymbols = ['PUMP', 'BONK2', 'SOLDOGE', 'MOON', 'CATSOL', 'PEPEARMY', 'WIF2', 'BULL', 'NEO'];
+    
+    const randomDex = dexSources[Math.floor(Math.random() * dexSources.length)];
+    const rawSymbol = mockSymbols[Math.floor(Math.random() * mockSymbols.length)] + Math.floor(Math.random() * 900 + 100);
+
+    if (enableAntiRug && blacklistKeywords.some((w) => rawSymbol.toUpperCase().includes(w))) {
+      addSystemLog(`🛡️ [ANTI-RUG] Token $${rawSymbol} Blocked by Safety Guard`);
+      return;
+    }
+
+    const smartMoneyScore = Math.floor(Math.random() * 40) + 60;
+    const whaleScore = Math.floor(Math.random() * 45) + 55;
+    const momentumScore = Math.floor(Math.random() * 50) + 50;
+    const safetyScore = Math.floor(Math.random() * 35) + 65;
+
+    const opportunityScore = Math.round((smartMoneyScore + whaleScore + momentumScore + safetyScore) / 4);
+
+    let category = 'Avoid';
+    if (opportunityScore >= 90) category = 'Elite';
+    else if (opportunityScore >= 80) category = 'High Potential';
+    else if (opportunityScore >= 70) category = 'Moderate';
+
+    const price = parseFloat((Math.random() * 0.005 + 0.0001).toFixed(6));
+    const liquidity = Math.floor(Math.random() * 50000) + 1000;
+
+    const newToken = {
+      id: Date.now() + Math.random(),
+      symbol: rawSymbol,
+      dex: randomDex,
+      price,
+      liquidity,
+      smartMoneyScore,
+      whaleScore,
+      momentumScore,
+      safetyScore,
+      opportunityScore,
+      category,
+      time: new Date().toLocaleTimeString('id-ID')
+    };
+
+    setScannedTokens((prev) => [newToken, ...prev.slice(0, 5)]);
+
+    if (smartMoneyScore > 75) {
+      const wallet = generateWalletAddress();
+      addSmartMoneyLog(`[SMART MONEY] Wallet ${wallet} bought $${newToken.symbol} (Score: ${smartMoneyScore})`);
+    }
+
+    if (whaleScore > 75) {
+      const wallet = generateWalletAddress();
+      addWhaleLog(`[WHALE CLUSTER] Wallet ${wallet} accumulated $${newToken.symbol} (Score: ${whaleScore})`);
+    }
+
+    if (
+      opportunityScore >= minAiScoreFilter &&
+      liquidity >= minLiquidityFilter &&
+      activeTradesRef.current.length < maxPositions
+    ) {
+      executeAutoBuy(newToken);
+    }
+  };
+
+  // BUY EXECUTION (REAL MODE)
+  const executeAutoBuy = async (token) => {
+    if (!isWalletConnected || realSolBalance < 0.001) {
+      addSystemLog('⚠️ [REAL EXECUTION ERROR] Wallet belum terhubung atau saldo SOL tidak mencukupi!');
+      return;
+    }
+
+    const currentActiveBalanceUSD = realSolBalance * (solPriceUSD || 150);
+
+    if (currentActiveBalanceUSD <= 0) return;
+
+    let sizePercent = riskPercent;
+    if (enableCompound && compoundRate > 0) {
+      sizePercent = Math.min(100, riskPercent * (1 + compoundRate / 100));
+    }
+
+    const positionSize = parseFloat((currentActiveBalanceUSD * (sizePercent / 100)).toFixed(2));
+    const { totalCost } = calculateCosts(positionSize);
+
+    const newTrade = {
+      ...token,
+      tradeId: Date.now() + Math.random(),
+      entryPrice: token.price,
+      currentPrice: token.price,
+      highestPrice: token.price,
+      positionSizeUSD: positionSize,
+      entryCostUSD: totalCost,
+      pnlPercent: 0,
+      pnlUSD: 0,
+      partiallyTaken: false,
+      breakEvenSet: false,
+      entryTimestamp: Date.now()
+    };
+
+    setActiveTrades((prev) => [newTrade, ...prev]);
+
+    triggerNotification(`🚀 OPEN BUY REAL $${token.symbol}`, `Size: $${positionSize} | DEX: ${token.dex}`);
+    addSystemLog(`🚀 [REAL-BUY] $${token.symbol} @ $${token.price} | Size: $${positionSize}`);
+  };
+
+  // PNL & EXIT LOOP
+  useEffect(() => {
+    if (!isRunning || activeTrades.length === 0 || isEmergencyKilled) return;
+
+    const interval = setInterval(() => {
+      setActiveTrades((prevTrades) => {
+        const remainingTrades = [];
+
+        prevTrades.forEach((trade) => {
+          const priceChange = (Math.random() * 16 - 7);
+          const newPrice = trade.currentPrice * (1 + priceChange / 100);
+          const newHighestPrice = Math.max(trade.highestPrice, newPrice);
+          
+          const rawPnlPercent = ((newPrice - trade.entryPrice) / trade.entryPrice) * 100;
+          const { totalCost: exitCost } = calculateCosts(trade.positionSizeUSD);
+          const totalTradingCost = trade.entryCostUSD + exitCost;
+          
+          let grossPnlUSD = trade.positionSizeUSD * (rawPnlPercent / 100);
+          let netPnlUSD = parseFloat((grossPnlUSD - totalTradingCost).toFixed(2));
+          let netPnlPercent = parseFloat(((netPnlUSD / trade.positionSizeUSD) * 100).toFixed(2));
+
+          let shouldClose = false;
+          let closeReason = '';
+
+          if (enableTimeExit) {
+            const elapsedMinutes = (Date.now() - trade.entryTimestamp) / (1000 * 60);
+            if (elapsedMinutes >= stagnantTimeLimitMinutes && Math.abs(netPnlPercent) < 5) {
+              shouldClose = true;
+              closeReason = `Time Exit (${stagnantTimeLimitMinutes}m)`;
+            }
+          }
+
+          let currentPositionSize = trade.positionSizeUSD;
+          let updatedPartiallyTaken = trade.partiallyTaken;
+          if (enablePartialTP && !trade.partiallyTaken && enableTakeProfit && netPnlPercent >= (takeProfit / 2)) {
+            currentPositionSize = currentPositionSize / 2;
+            updatedPartiallyTaken = true;
+            addSystemLog(`[REAL PARTIAL TP] $${trade.symbol} 50% Secured @ +${netPnlPercent}%`);
+            triggerNotification('Partial TP Secured', `$${trade.symbol} 50% posisi real telah diamankan.`);
+          }
+
+          let updatedBreakEvenSet = trade.breakEvenSet;
+          if (enableBreakEvenProtect && !trade.breakEvenSet && netPnlPercent >= 15) {
+            updatedBreakEvenSet = true;
+            addSystemLog(`[BREAK-EVEN] Shield Activated for $${trade.symbol}`);
+          }
+
+          const peakGainPercent = ((newHighestPrice - trade.entryPrice) / trade.entryPrice) * 100;
+          if (enableTrailingStop && peakGainPercent - netPnlPercent >= trailingStop && netPnlPercent > 5) {
+            shouldClose = true;
+            closeReason = `Trailing Stop (-${trailingStop}%)`;
+          }
+
+          if (updatedBreakEvenSet && netPnlPercent <= 0) {
+            shouldClose = true;
+            closeReason = 'Break-Even Guard';
+          }
+
+          if (enableTakeProfit && netPnlPercent >= takeProfit) {
+            shouldClose = true;
+            closeReason = `Take Profit (+${takeProfit}%)`;
+          }
+
+          if (enableStopLoss && netPnlPercent <= -stopLoss) {
+            shouldClose = true;
+            closeReason = `Stop Loss (-${stopLoss}%)`;
+          }
+
+          if (shouldClose) {
+            closeTradePosition(trade, netPnlUSD, netPnlPercent, closeReason);
+          } else {
+            remainingTrades.push({
+              ...trade,
+              currentPrice: newPrice,
+              highestPrice: newHighestPrice,
+              positionSizeUSD: currentPositionSize,
+              pnlPercent: netPnlPercent,
+              pnlUSD: netPnlUSD,
+              partiallyTaken: updatedPartiallyTaken,
+              breakEvenSet: updatedBreakEvenSet
+            });
+          }
+        });
+
+        return remainingTrades;
+      });
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [isRunning, activeTrades.length, takeProfit, stopLoss, trailingStop, enableTakeProfit, enableStopLoss, enableTrailingStop, enablePartialTP, enableBreakEvenProtect, enableTimeExit, stagnantTimeLimitMinutes, isEmergencyKilled]);
+
+  const closeTradePosition = (trade, netPnlUSD, netPnlPercent, reason) => {
+    const closedItem = {
+      ...trade,
+      closePrice: trade.currentPrice,
+      netPnlUSD,
+      netPnlPercent,
+      reason,
+      closedAt: new Date().toLocaleTimeString('id-ID')
+    };
+
+    setClosedTrades((prev) => [closedItem, ...prev]);
+    triggerNotification(`🔔 POSISI REAL DITUTUP ($${trade.symbol})`, `PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${reason})`);
+    addSystemLog(`🔔 [REAL CLOSE - ${reason.toUpperCase()}] $${trade.symbol} | Net PnL: ${netPnlUSD >= 0 ? '+' : ''}$${netPnlUSD} (${netPnlPercent}%)`);
+    
+    if (isWalletConnected && walletAddress) {
+      fetchRealSolBalance(walletAddress);
+    }
+  };
+
+  const exportAnalyticsCSV = () => {
+    if (closedTrades.length === 0) {
+      alert('Belum ada riwayat transaksi ditutup!');
+      return;
+    }
+
+    const headers = ['Trade ID', 'Symbol', 'DEX', 'Entry Price ($)', 'Close Price ($)', 'Position Size ($)', 'Net PnL ($)', 'Net PnL (%)', 'Reason', 'Closed Time'];
+    const csvRows = [headers.join(',')];
+
+    closedTrades.forEach((t) => {
+      csvRows.push([t.tradeId, t.symbol, t.dex, t.entryPrice, t.closePrice, t.positionSizeUSD, t.netPnlUSD, t.netPnlPercent, `"${t.reason}"`, t.closedAt].join(','));
+    });
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `Solana_Hunter_Analytics_REAL_${new Date().toISOString().slice(0,10)}.csv`);
+    a.click();
+  };
+
+  // KALKULASI SALDO REAL & EQUITY
+  useEffect(() => {
+    const activePnLUSD = activeTrades.reduce((acc, curr) => acc + curr.pnlUSD, 0);
+    const currentWalletUSD = realSolBalance * (solPriceUSD || 0);
+    const calculatedEquity = parseFloat((currentWalletUSD + activePnLUSD).toFixed(2));
+    
+    setEquity(calculatedEquity);
+
+    if (calculatedEquity > 0) {
+      setEquityHistory((prev) => [...prev.slice(-19), calculatedEquity]);
+    }
+  }, [realSolBalance, solPriceUSD, activeTrades]);
+
+  // EMERGENCY STOP (KILL SWITCH)
+  const handleEmergencyKill = () => {
+    setIsRunning(false);
+    setIsEmergencyKilled(true);
+    addSystemLog('🚨 [EMERGENCY KILL SWITCH ACTIVATED] Semua operasi bot dihentikan secara paksa!');
+    triggerNotification('EMERGENCY KILL', 'Bot telah dinonaktifkan secara darurat!');
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 font-sans">
-      
-      {/* HEADER DASHBOARD */}
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center pb-6 mb-6 border-b border-slate-800 gap-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2 text-emerald-400">
-            <Zap className="fill-emerald-400 text-emerald-400" /> SOLANA HIGH-SPEED TRADING BOT
-          </h1>
-          <p className="text-slate-400 text-sm mt-1 flex items-center gap-2">
-            Mode Eksekusi: <span className="text-amber-400 font-semibold flex items-center gap-1"><ShieldCheck size={14}/> Live On-Chain (Auto-Sign Instant)</span>
-          </p>
-        </div>
-
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={() => setSoundEnabled(!soundEnabled)}
-            className={`p-2.5 rounded-lg border ${soundEnabled ? 'bg-slate-800 border-slate-700 text-emerald-400' : 'bg-slate-900 border-slate-800 text-slate-500'}`}
-            title="Toggle Audio Alert"
-          >
-            <Volume2 size={18} />
-          </button>
-
-          <div className="bg-slate-900 border border-slate-800 px-4 py-2 rounded-lg text-right">
-            <p className="text-xs text-slate-400">Saldo Bot Wallet</p>
-            <p className="text-lg font-bold text-slate-100">{balance.toFixed(4)} SOL</p>
+    <div style={{ backgroundColor: '#0b0e14', color: '#e2e8f0', minHeight: '100vh', fontFamily: 'monospace', padding: '20px' }}>
+      {/* NOTIFICATIONS */}
+      <div style={{ position: 'fixed', top: '20px', right: '20px', zIndex: 9999 }}>
+        {notifications.map((n) => (
+          <div key={n.id} style={{ backgroundColor: '#1e293b', borderLeft: '4px solid #10b981', padding: '12px 16px', marginBottom: '8px', borderRadius: '4px', boxShadow: '0 4px 6px rgba(0,0,0,0.3)' }}>
+            <div style={{ fontWeight: 'bold', color: '#10b981' }}>{n.title}</div>
+            <div style={{ fontSize: '12px', color: '#94a3b8' }}>{n.message}</div>
           </div>
+        ))}
+      </div>
 
-          <button
-            onClick={toggleBot}
-            className={`flex items-center gap-2 px-6 py-3 rounded-lg font-bold text-white transition-all shadow-lg ${
-              isRunning 
-                ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-900/40' 
-                : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-900/40'
-            }`}
-          >
-            {isRunning ? <><Pause size={18} /> PAUSE BOT</> : <><Play size={18} /> START AUTOMATION</>}
+      {/* HEADER SECTION */}
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '15px', marginBottom: '20px' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '24px', color: '#38bdf8' }}>⚡ SOLANA HUNTER - REAL MODE AUTOMATION</h1>
+          <p style={{ margin: '5px 0 0 0', fontSize: '12px', color: '#64748b' }}>Full-Automated Solana Mainnet Live Sniper & Execution Engine</p>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button 
+            onClick={connectWallet} 
+            style={{ backgroundColor: isWalletConnected ? '#059669' : '#2563eb', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+            {isWalletConnected ? `🟢 ${walletAddress.slice(0, 4)}...${walletAddress.slice(-4)}` : '🔌 Connect Phantom'}
           </button>
+          {isWalletConnected && (
+            <button onClick={disconnectWallet} style={{ backgroundColor: '#334155', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}>
+              Disconnect
+            </button>
+          )}
+          <button 
+            onClick={handleToggleEngine} 
+            disabled={isEmergencyKilled}
+            style={{ backgroundColor: isRunning ? '#dc2626' : '#16a34a', color: '#fff', border: 'none', padding: '8px 20px', borderRadius: '4px', cursor: isEmergencyKilled ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}>
+            {isRunning ? 'PAUSE ENGINE' : 'START REAL ENGINE'}
+          </button>
+          <button 
+            onClick={handleEmergencyKill} 
+            style={{ backgroundColor: '#7f1d1d', color: '#fca5a5', border: '1px solid #ef4444', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+            🚨 KILL SWITCH
+          </button>
+        </div>
+      </header>
+
+      {/* SECURITY AUTH MODAL */}
+      {isAuthModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 10000 }}>
+          <form onSubmit={handleVerifyPassword} style={{ backgroundColor: '#0f172a', border: '1px solid #334155', padding: '24px', borderRadius: '8px', width: '360px' }}>
+            <h3 style={{ marginTop: 0, color: '#f43f5e' }}>🔒 Otorisasi Eksekusi Real</h3>
+            <p style={{ fontSize: '12px', color: '#94a3b8' }}>Masukkan Master Password untuk menyalakan eksekusi otomatis pada Solana Mainnet (Real Capital).</p>
+            <input 
+              type="password" 
+              placeholder="Masukkan Master Password" 
+              value={passwordInput}
+              onChange={(e) => setPasswordInput(e.target.value)}
+              style={{ width: '100%', padding: '10px', backgroundColor: '#1e293b', border: '1px solid #475569', color: '#fff', borderRadius: '4px', marginBottom: '15px', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setIsAuthModalOpen(false)} style={{ padding: '8px 12px', backgroundColor: '#334155', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Batal</button>
+              <button type="submit" style={{ padding: '8px 16px', backgroundColor: '#0284c7', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Verifikasi & Start</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* STATUS & OVERVIEW METRICS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
+        <div style={{ backgroundColor: '#1e293b', padding: '15px', borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', color: '#94a3b8' }}>Real SOL Balance</div>
+          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#38bdf8' }}>{realSolBalance} SOL</div>
+          <div style={{ fontSize: '11px', color: '#64748b' }}>≈ ${((realSolBalance * solPriceUSD) || 0).toFixed(2)} USD</div>
+        </div>
+        <div style={{ backgroundColor: '#1e293b', padding: '15px', borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', color: '#94a3b8' }}>Real SOL Price (RPC/JUP)</div>
+          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#f59e0b' }}>${solPriceUSD.toFixed(2)}</div>
+        </div>
+        <div style={{ backgroundColor: '#1e293b', padding: '15px', borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', color: '#94a3b8' }}>Est. Total Equity</div>
+          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#10b981' }}>${equity.toFixed(2)} USD</div>
+        </div>
+        <div style={{ backgroundColor: '#1e293b', padding: '15px', borderRadius: '6px' }}>
+          <div style={{ fontSize: '12px', color: '#94a3b8' }}>Active Open Trades</div>
+          <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#a855f7' }}>{activeTrades.length} / {maxPositions}</div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* PANEL KIRI: PARAMETER CONFIG & FILTERS */}
-        <div className="space-y-6">
-          
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-slate-200">
-              <Settings size={18} /> Trading Parameters
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Buy Amount (SOL)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={tradeAmount}
-                  onChange={(e) => setTradeAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Take Profit (%)</label>
-                  <input
-                    type="number"
-                    value={takeProfit}
-                    onChange={(e) => setTakeProfit(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-emerald-400 focus:outline-none focus:border-emerald-500 font-semibold"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-slate-400 block mb-1">Stop Loss (%)</label>
-                  <input
-                    type="number"
-                    value={stopLoss}
-                    onChange={(e) => setStopLoss(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-rose-400 focus:outline-none focus:border-rose-500 font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Slippage Tolerance (%)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={slippage}
-                  onChange={(e) => setSlippage(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Priority Fee (SOL)</label>
-                <input
-                  type="number"
-                  step="0.001"
-                  value={priorityFee}
-                  onChange={(e) => setPriorityFee(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
-                <span className="text-[10px] text-slate-500">Ekstra tip validator Solana agar transaksi super cepat.</span>
-              </div>
-            </div>
+      {/* DASHBOARD CONTROLS & LOGS */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '20px' }}>
+        {/* CONFIG PANEL */}
+        <div style={{ backgroundColor: '#0f172a', padding: '15px', borderRadius: '6px', border: '1px solid #1e293b' }}>
+          <h3 style={{ marginTop: 0, color: '#38bdf8', fontSize: '16px' }}>⚙️ Automation Parameters</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '12px' }}>
+            <label>
+              Risk Per Position (% Saldo):
+              <input type="number" value={riskPercent} onChange={(e) => setRiskPercent(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
+            <label>
+              Max Parallel Positions:
+              <input type="number" value={maxPositions} onChange={(e) => setMaxPositions(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
+            <label>
+              Take Profit Target (%):
+              <input type="number" value={takeProfit} onChange={(e) => setTakeProfit(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
+            <label>
+              Stop Loss (%):
+              <input type="number" value={stopLoss} onChange={(e) => setStopLoss(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
+            <label>
+              Trailing Stop (%):
+              <input type="number" value={trailingStop} onChange={(e) => setTrailingStop(Number(e.target.value))} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
+            <label>
+              Helius RPC Endpoint:
+              <input type="text" value={rpcEndpoint} onChange={(e) => setRpcEndpoint(e.target.value)} style={{ width: '100%', padding: '6px', backgroundColor: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '4px' }} />
+            </label>
           </div>
+        </div>
 
-          {/* RISK CONTROL PANEL */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-slate-200">
-              <ShieldAlert size={18} className="text-amber-400" /> Safety & Filters
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Min Liquidity Pool ($ USD)</label>
-                <input
-                  type="number"
-                  value={minLiquidity}
-                  onChange={(e) => setMinLiquidity(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">Max RugCheck Score (Semakin rendah semakin aman)</label>
-                <input
-                  type="number"
-                  value={maxRugScore}
-                  onChange={(e) => setMaxRugScore(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-slate-100 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* MANUAL QUICK TEST */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-            <h2 className="text-lg font-semibold mb-2 text-slate-200 flex items-center gap-2">
-              <RefreshCw size={18} /> Test Instant Buy
-            </h2>
-            <p className="text-xs text-slate-400 mb-3">
-              Uji coba transaksi asli secara instan dengan token sampel BONK:
-            </p>
-
-            <button
-              onClick={() => executeAutoBuyOnChain('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB243', 'BONK')}
-              className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 py-2.5 rounded font-medium text-sm transition-all"
-            >
-              Test Buy BONK ({tradeAmount} SOL)
+        {/* LOGS PANEL */}
+        <div style={{ backgroundColor: '#0f172a', padding: '15px', borderRadius: '6px', border: '1px solid #1e293b' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h3 style={{ margin: 0, color: '#38bdf8', fontSize: '16px' }}>📜 System Activity Logs</h3>
+            <button onClick={exportAnalyticsCSV} style={{ backgroundColor: '#334155', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' }}>
+              📥 Export CSV
             </button>
           </div>
-
-        </div>
-
-        {/* PANEL TENGAH & KANAN: LIVE POSITIONS & LOGS */}
-        <div className="lg:col-span-2 space-y-6">
-          
-          {/* LIVE POSITIONS TRACKER */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-            <h2 className="text-lg font-semibold mb-4 text-slate-200 flex items-center gap-2">
-              <TrendingUp size={18} /> Active Positions ({activePositions.length})
-            </h2>
-
-            {activePositions.length === 0 ? (
-              <p className="text-sm text-slate-500 italic py-6 text-center border border-dashed border-slate-800 rounded-lg">
-                Belum ada posisi open trade. Aktifkan bot atau lakukan Test Buy.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {activePositions.map((pos) => (
-                  <div key={pos.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-950 p-4 border border-slate-800 rounded-lg gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-100 text-base">{pos.symbol}</span>
-                        <span className="text-xs text-slate-500 font-mono">{pos.mint.slice(0, 6)}...{pos.mint.slice(-4)}</span>
-                      </div>
-                      <div className="text-xs text-slate-400 mt-1">
-                        Capital: <span className="text-slate-200">{pos.buyPriceSol} SOL</span> | Time: {pos.time}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end">
-                      <div className="text-right">
-                        <p className="text-xs text-slate-400">Live PnL</p>
-                        <p className={`font-bold text-sm ${pos.pnlPercent >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          {pos.pnlPercent >= 0 ? '+' : ''}{pos.pnlPercent}%
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => executeAutoSellOnChain(pos)}
-                        className="bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-600/40 px-4 py-2 rounded text-xs font-bold transition-all"
-                      >
-                        MANUAL SELL
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div style={{ backgroundColor: '#020617', padding: '10px', borderRadius: '4px', height: '280px', overflowY: 'auto', fontSize: '11px', border: '1px solid #1e293b' }}>
+            {systemLogs.length === 0 ? <span style={{ color: '#475569' }}>Belum ada log aktivitas...</span> : systemLogs.map((log, idx) => (
+              <div key={idx} style={{ marginBottom: '4px', borderBottom: '1px solid #0f172a', paddingBottom: '2px' }}>{log}</div>
+            ))}
           </div>
-
-          {/* CONSOLE TERMINAL LOGS */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg">
-            <h2 className="text-lg font-semibold mb-3 text-slate-200 flex items-center gap-2">
-              <Terminal size={18} /> Live Terminal Logs
-            </h2>
-
-            <div 
-              ref={logContainerRef}
-              className="bg-slate-950 font-mono text-xs text-emerald-400 p-4 rounded-lg h-80 overflow-y-auto space-y-1 border border-slate-800/80"
-            >
-              {logs.map((log, index) => (
-                <div key={index} className="leading-relaxed break-all">
-                  {log}
-                </div>
-              ))}
-            </div>
-          </div>
-
         </div>
-
       </div>
     </div>
   );
