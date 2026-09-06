@@ -2,11 +2,6 @@ import { Pool } from "pg";
 
 let pool = null;
 
-/**
- * Create a single shared connection pool.
- * Returns null if DATABASE_URL is missing or invalid.
- * Never throws on missing config — returns null so the app stays alive.
- */
 export function getPool() {
   if (pool) return pool;
 
@@ -19,18 +14,15 @@ export function getPool() {
   try {
     pool = new Pool({
       connectionString,
-      // Conservative settings for serverless / short-lived processes
       max: 5,
       idleTimeoutMillis: 10000,
       connectionTimeoutMillis: 5000,
-      // Do not log connection string or credentials
       ssl:
         process.env.NODE_ENV === "production"
           ? { rejectUnauthorized: false }
           : undefined,
     });
 
-    // Prevent unhandled errors from crashing the process
     pool.on("error", (err) => {
       console.error("[db] Unexpected pool error:", err.message);
     });
@@ -42,10 +34,6 @@ export function getPool() {
   }
 }
 
-/**
- * Real database health check.
- * Returns one of: "CONNECTED" | "NOT_CONFIGURED" | "ERROR"
- */
 export async function checkDatabaseHealth() {
   const connectionString = process.env.DATABASE_URL;
 
@@ -67,7 +55,6 @@ export async function checkDatabaseHealth() {
   let client;
   try {
     client = await p.connect();
-    // Simple real query — proves the connection works
     await client.query("SELECT 1 AS ok");
     return {
       status: "CONNECTED",
