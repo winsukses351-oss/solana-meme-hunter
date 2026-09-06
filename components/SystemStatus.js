@@ -2,21 +2,35 @@
 
 import { useState, useEffect } from "react";
 
-export default function SystemStatus({ backendStatus = "CHECKING", dbStatus = "CHECKING" }) {
+export default function SystemStatus({
+  backendStatus = "CHECKING",
+  dbStatus = "CHECKING",
+  solanaRpcData = null,
+}) {
   const [logs, setLogs] = useState([]);
+
+  const rpcStatus = solanaRpcData?.status || "CHECKING";
 
   useEffect(() => {
     const now = new Date().toISOString().split("T")[1].slice(0, 8);
+
+    let rpcLogMsg = `SOLANA RPC: Not configured`;
+    if (rpcStatus === "CONNECTED") {
+      rpcLogMsg = `SOLANA RPC: Connected (Slot: ${solanaRpcData?.slot || "N/A"}, Latency: ${solanaRpcData?.latencyMs ?? "N/A"}ms)`;
+    } else if (rpcStatus === "ERROR") {
+      rpcLogMsg = `SOLANA RPC: Health check failed`;
+    }
+
     const initialLogs = [
       `[${now}] INFO: Frontend initialized`,
-      `[${now}] INFO: Phase 1 & 2 dashboard loaded`,
+      `[${now}] INFO: Terminal Phase 1-3 active`,
       `[${now}] BACKEND: API status -> ${backendStatus}`,
       `[${now}] DATABASE: Connection status -> ${dbStatus}`,
+      `[${now}] ${rpcLogMsg}`,
     ];
     setLogs(initialLogs);
-  }, [backendStatus, dbStatus]);
+  }, [backendStatus, dbStatus, rpcStatus, solanaRpcData?.slot, solanaRpcData?.latencyMs]);
 
-  // Dynamic mapping based on real server-side checks
   const getDbDisplayStatus = () => {
     if (dbStatus === "connected") return "CONNECTED";
     if (dbStatus === "not_configured") return "NOT CONFIGURED";
@@ -24,9 +38,16 @@ export default function SystemStatus({ backendStatus = "CHECKING", dbStatus = "C
     return "CHECKING...";
   };
 
+  const getRpcDisplayStatus = () => {
+    if (rpcStatus === "CONNECTED") return "CONNECTED";
+    if (rpcStatus === "NOT_CONFIGURED") return "NOT CONFIGURED";
+    if (rpcStatus === "ERROR") return "ERROR";
+    return "CHECKING...";
+  };
+
   const systemHealth = [
     { label: "DATABASE", status: getDbDisplayStatus() },
-    { label: "SOLANA RPC", status: "NOT CONNECTED" },
+    { label: "SOLANA RPC", status: getRpcDisplayStatus() },
     { label: "MARKET DATA", status: "NOT CONNECTED" },
     { label: "WALLET / SIGNER", status: "NOT CONNECTED" },
     { label: "EXECUTION PROVIDER", status: "NOT CONNECTED" },
@@ -44,7 +65,10 @@ export default function SystemStatus({ backendStatus = "CHECKING", dbStatus = "C
     { provider: "Birdeye", status: "NOT CONNECTED" },
     { provider: "DexScreener", status: "NOT CONNECTED" },
     { provider: "Jupiter", status: "NOT CONNECTED" },
-    { provider: "Solana RPC", status: "NOT CONNECTED" },
+    {
+      provider: "Solana RPC",
+      status: getRpcDisplayStatus(),
+    },
     {
       provider: "PostgreSQL",
       status: getDbDisplayStatus(),
@@ -71,10 +95,10 @@ export default function SystemStatus({ backendStatus = "CHECKING", dbStatus = "C
               </span>
             </div>
             <div className="text-sm font-mono font-bold text-slate-200 mt-1">
-              Reason: Backend/database foundation only. Live trading is not implemented in Phase 2.
+              Reason: Read-only Solana RPC mainnet integration complete. Live trading is disabled in Phase 3.
             </div>
             <p className="text-xs font-mono text-slate-400 mt-1">
-              Current state: BLOCKED — Foundation & API Only
+              Current state: BLOCKED — Read-Only RPC Active
             </p>
           </div>
         </section>
@@ -94,11 +118,44 @@ export default function SystemStatus({ backendStatus = "CHECKING", dbStatus = "C
               EMERGENCY STOP
             </button>
             <p className="text-[10px] font-mono text-slate-500 text-center mt-2">
-              Backend kill switch not connected.
+              Execution engine not connected.
             </p>
           </div>
         </section>
       </div>
+
+      {/* Solana Mainnet Telemetry Bar (If Connected) */}
+      {rpcStatus === "CONNECTED" && solanaRpcData && (
+        <section className="bg-[#121721] border border-emerald-900/40 rounded-lg p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Solana Mainnet Telemetry (Real-time RPC)
+            </span>
+            <span className="text-[10px] font-mono text-slate-400">
+              Network: <strong className="text-slate-200 uppercase">{solanaRpcData.network || "mainnet-beta"}</strong>
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-xs">
+            <div className="bg-[#0b0e14] p-2 rounded border border-slate-800/60">
+              <div className="text-[10px] text-slate-500">CURRENT SLOT</div>
+              <div className="text-slate-200 font-bold">{solanaRpcData.slot?.toLocaleString() || "N/A"}</div>
+            </div>
+            <div className="bg-[#0b0e14] p-2 rounded border border-slate-800/60">
+              <div className="text-[10px] text-slate-500">BLOCK HEIGHT</div>
+              <div className="text-slate-200 font-bold">{solanaRpcData.blockHeight?.toLocaleString() || "N/A"}</div>
+            </div>
+            <div className="bg-[#0b0e14] p-2 rounded border border-slate-800/60">
+              <div className="text-[10px] text-slate-500">LATENCY</div>
+              <div className="text-emerald-400 font-bold">{solanaRpcData.latencyMs ?? "N/A"} ms</div>
+            </div>
+            <div className="bg-[#0b0e14] p-2 rounded border border-slate-800/60">
+              <div className="text-[10px] text-slate-500">EPOCH</div>
+              <div className="text-slate-200 font-bold">{solanaRpcData.epoch ?? "N/A"}</div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* System Health & API Health Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -181,7 +238,7 @@ export default function SystemStatus({ backendStatus = "CHECKING", dbStatus = "C
             Settings backend not connected.
           </p>
           <p className="text-[11px] text-slate-500 mt-1">
-            Configuration panels will be available after the backend is integrated.
+            Configuration panels will be available after the full engine integration.
           </p>
         </div>
       </section>
