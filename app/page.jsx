@@ -56,7 +56,6 @@ export default function Home() {
     }
 
     fetchHealth();
-    // Refresh every 30 seconds
     const interval = setInterval(fetchHealth, 30000);
     return () => {
       cancelled = true;
@@ -146,6 +145,13 @@ export default function Home() {
     return health.backend === "connected" ? "CONNECTED" : "NOT CONNECTED";
   };
 
+  const getSolanaStatus = () => {
+    if (healthLoading) return "CHECKING...";
+    if (healthError) return "ERROR";
+    if (!health) return "NOT CONNECTED";
+    return health.solana_rpc?.status || health.providers?.solana_rpc || "NOT CONNECTED";
+  };
+
   const getTradingEngineStatus = () => {
     if (healthLoading) return "CHECKING...";
     if (healthError) return "ERROR";
@@ -157,11 +163,14 @@ export default function Home() {
     if (healthLoading) return "CHECKING...";
     if (healthError) return "ERROR";
     if (!health) return "NOT CONNECTED";
-    const key = name.toLowerCase().replace(" ", "_");
     if (name === "PostgreSQL") return getDbStatus();
     if (name === "Backend API") return getBackendStatus();
+    if (name === "Solana RPC") return getSolanaStatus();
+    const key = name.toLowerCase().replace(" ", "_");
     return health.providers?.[key] || "NOT CONNECTED";
   };
+
+  const solanaDetails = health?.solana_rpc || null;
 
   const logs = [
     { time: currentTime || "--", msg: "Frontend initialized" },
@@ -176,9 +185,13 @@ export default function Home() {
     },
     {
       time: currentTime || "--",
+      msg: `Solana RPC: ${getSolanaStatus()}`,
+    },
+    {
+      time: currentTime || "--",
       msg: `Trading engine: ${getTradingEngineStatus()}`,
     },
-    { time: currentTime || "--", msg: "Phase 2 health check active" },
+    { time: currentTime || "--", msg: "Phase 3 Solana RPC health active" },
   ];
 
   const StatusBadge = ({ status, variant = "blocked" }) => {
@@ -261,7 +274,7 @@ export default function Home() {
                   SOLANA AI TRADER
                 </h1>
                 <p className="text-[10px] sm:text-xs text-zinc-500 leading-none">
-                  PHASE 2 — BACKEND FOUNDATION
+                  PHASE 3 — SOLANA RPC FOUNDATION
                 </p>
               </div>
             </div>
@@ -347,7 +360,7 @@ export default function Home() {
       </div>
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        {/* TRADING STATUS — ALWAYS BLOCKED IN PHASE 2 */}
+        {/* TRADING STATUS — ALWAYS BLOCKED */}
         <div className="bg-gradient-to-r from-red-950/40 to-zinc-900 border border-red-900/50 rounded-xl p-4 sm:p-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -358,11 +371,11 @@ export default function Home() {
                 <StatusBadge status="BLOCKED" variant="blocked" />
               </div>
               <p className="text-sm text-zinc-300">
-                Live trading is disabled in Phase 2. Trading engine not
+                Live trading is disabled in Phase 3. Trading engine not
                 implemented yet.
               </p>
               <p className="text-xs text-zinc-500 mt-1">
-                Current state: BLOCKED — Backend foundation only
+                Current state: BLOCKED — Solana RPC read-only only
               </p>
             </div>
             <div className="text-right text-xs text-zinc-500 font-mono">
@@ -402,43 +415,6 @@ export default function Home() {
                 title="No market data connected"
                 subtitle="Opportunities will appear when the market-data engine is connected."
               />
-              <div className="hidden sm:block overflow-x-auto">
-                <table className="w-full text-left text-xs text-zinc-500">
-                  <thead>
-                    <tr className="border-b border-zinc-800">
-                      {[
-                        "TOKEN",
-                        "PRICE",
-                        "LIQUIDITY",
-                        "VOLUME",
-                        "SMART MONEY",
-                        "WHALE",
-                        "MOMENTUM",
-                        "SAFETY",
-                        "OPPORTUNITY",
-                        "STATUS",
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="px-3 py-2 font-medium whitespace-nowrap"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td
-                        colSpan={10}
-                        className="px-3 py-8 text-center text-zinc-600"
-                      >
-                        Waiting for backend
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             </SectionCard>
 
             {/* TWO COLUMN: SCANNER + SMART MONEY */}
@@ -491,84 +467,11 @@ export default function Home() {
             {/* OPEN POSITIONS */}
             <SectionCard title="Open Positions">
               <EmptyState title="No active positions." />
-              <div className="hidden md:block overflow-x-auto mt-2">
-                <table className="w-full text-left text-xs text-zinc-500">
-                  <thead>
-                    <tr className="border-b border-zinc-800">
-                      {[
-                        "TOKEN",
-                        "ENTRY",
-                        "CURRENT",
-                        "SIZE",
-                        "PNL",
-                        "TP",
-                        "SL",
-                        "TRAILING",
-                        "STATUS",
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="px-3 py-2 font-medium whitespace-nowrap"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td
-                        colSpan={9}
-                        className="px-3 py-6 text-center text-zinc-600"
-                      >
-                        No positions
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             </SectionCard>
 
             {/* TRADE HISTORY */}
             <SectionCard title="Trade History">
               <EmptyState title="No trades recorded." />
-              <div className="hidden md:block overflow-x-auto mt-2">
-                <table className="w-full text-left text-xs text-zinc-500">
-                  <thead>
-                    <tr className="border-b border-zinc-800">
-                      {[
-                        "TIME",
-                        "TOKEN",
-                        "SIDE",
-                        "SIZE",
-                        "ENTRY",
-                        "EXIT",
-                        "GROSS PNL",
-                        "COST",
-                        "NET PNL",
-                        "STATUS",
-                      ].map((h) => (
-                        <th
-                          key={h}
-                          className="px-3 py-2 font-medium whitespace-nowrap"
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td
-                        colSpan={10}
-                        className="px-3 py-6 text-center text-zinc-600"
-                      >
-                        No history
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
             </SectionCard>
           </>
         )}
@@ -646,22 +549,19 @@ export default function Home() {
                     className="flex items-center justify-between bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2.5"
                   >
                     <span className="text-xs text-zinc-400">{item}</span>
-                    <span className="text-xs font-mono text-zinc-500">
-                      --
-                    </span>
+                    <span className="text-xs font-mono text-zinc-500">--</span>
                   </div>
                 ))}
               </div>
             </SectionCard>
 
-            {/* EMERGENCY KILL SWITCH */}
             <div className="bg-red-950/30 border border-red-900/60 rounded-xl p-4 sm:p-5">
               <h2 className="text-sm font-semibold text-red-300 uppercase tracking-wide mb-2">
                 Emergency Kill Switch
               </h2>
               <p className="text-xs text-zinc-400 mb-4">
                 Backend kill switch not connected. This control is visual only
-                and cannot execute any action in Phase 2.
+                and cannot execute any action in Phase 3.
               </p>
               <button
                 disabled
@@ -682,8 +582,7 @@ export default function Home() {
                   {systemHealthItems.map((item) => {
                     let status = "NOT CONNECTED";
                     if (item === "DATABASE") status = getDbStatus();
-                    else if (item === "BACKGROUND WORKERS")
-                      status = "NOT CONNECTED";
+                    else if (item === "SOLANA RPC") status = getSolanaStatus();
                     return (
                       <div
                         key={item}
@@ -695,6 +594,41 @@ export default function Home() {
                     );
                   })}
                 </div>
+
+                {/* Solana RPC Details (only when data available) */}
+                {solanaDetails && solanaDetails.status === "CONNECTED" && (
+                  <div className="mt-4 p-3 bg-zinc-950/70 border border-zinc-800 rounded-lg text-xs space-y-1">
+                    <p className="text-zinc-400">
+                      Network:{" "}
+                      <span className="text-zinc-200 font-mono">
+                        {solanaDetails.network || "solana-mainnet"}
+                      </span>
+                    </p>
+                    <p className="text-zinc-400">
+                      Slot:{" "}
+                      <span className="text-zinc-200 font-mono">
+                        {solanaDetails.slot ?? "--"}
+                      </span>
+                    </p>
+                    <p className="text-zinc-400">
+                      Block Height:{" "}
+                      <span className="text-zinc-200 font-mono">
+                        {solanaDetails.blockHeight ?? "--"}
+                      </span>
+                    </p>
+                    <p className="text-zinc-400">
+                      Latency:{" "}
+                      <span className="text-zinc-200 font-mono">
+                        {solanaDetails.latencyMs != null
+                          ? `${solanaDetails.latencyMs} ms`
+                          : "--"}
+                      </span>
+                    </p>
+                    <p className="text-zinc-500 text-[10px]">
+                      Last Check: {solanaDetails.checkedAt || "--"}
+                    </p>
+                  </div>
+                )}
               </SectionCard>
 
               <SectionCard title="API Health">
@@ -745,7 +679,7 @@ export default function Home() {
       {/* FOOTER */}
       <footer className="border-t border-zinc-800 mt-8 py-4">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-zinc-600">
-          <span>Solana AI Trader — Phase 2 Backend Foundation</span>
+          <span>Solana AI Trader — Phase 3 Solana RPC Foundation</span>
           <span className="font-mono">
             SYSTEM BLOCKED • TRADING ENGINE OFF
           </span>
