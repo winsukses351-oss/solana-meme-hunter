@@ -1,6 +1,6 @@
 {
   "name": "solana-ai-trader",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,6 +10,7 @@
     "db:migrate": "node -e \"require('./lib/migrations').runMigrations()\""
   },
   "dependencies": {
+    "@solana/web3.js": "^1.95.8",
     "next": "14.2.35",
     "pg": "^8.11.5",
     "react": "^18",
