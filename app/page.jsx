@@ -6,6 +6,9 @@ export default function Home() {
   const [activeSection, setActiveSection] = useState("dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState("");
+  const [health, setHealth] = useState(null);
+  const [healthError, setHealthError] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(true);
 
   useEffect(() => {
     const updateTime = () => {
@@ -24,6 +27,41 @@ export default function Home() {
     updateTime();
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Real health fetch — no fake data
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchHealth() {
+      setHealthLoading(true);
+      setHealthError(null);
+      try {
+        const res = await fetch("/api/health", { cache: "no-store" });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (!cancelled) {
+          setHealth(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setHealthError(err.message || "Failed to reach backend");
+          setHealth(null);
+        }
+      } finally {
+        if (!cancelled) setHealthLoading(false);
+      }
+    }
+
+    fetchHealth();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchHealth, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   const navItems = [
@@ -93,13 +131,54 @@ export default function Home() {
     "Compounding",
   ];
 
+  // Derive real statuses from health response
+  const getDbStatus = () => {
+    if (healthLoading) return "CHECKING...";
+    if (healthError) return "ERROR";
+    if (!health) return "NOT CONNECTED";
+    return health.database?.status || "NOT CONNECTED";
+  };
+
+  const getBackendStatus = () => {
+    if (healthLoading) return "CHECKING...";
+    if (healthError) return "ERROR";
+    if (!health) return "NOT CONNECTED";
+    return health.backend === "connected" ? "CONNECTED" : "NOT CONNECTED";
+  };
+
+  const getTradingEngineStatus = () => {
+    if (healthLoading) return "CHECKING...";
+    if (healthError) return "ERROR";
+    if (!health) return "BLOCKED";
+    return health.trading_engine?.status || "BLOCKED";
+  };
+
+  const getProviderStatus = (name) => {
+    if (healthLoading) return "CHECKING...";
+    if (healthError) return "ERROR";
+    if (!health) return "NOT CONNECTED";
+    const key = name.toLowerCase().replace(" ", "_");
+    if (name === "PostgreSQL") return getDbStatus();
+    if (name === "Backend API") return getBackendStatus();
+    return health.providers?.[key] || "NOT CONNECTED";
+  };
+
   const logs = [
     { time: currentTime || "--", msg: "Frontend initialized" },
     { time: currentTime || "--", msg: "Phase 1 dashboard loaded" },
-    { time: currentTime || "--", msg: "Backend connection: NOT CONNECTED" },
-    { time: currentTime || "--", msg: "Trading engine: NOT CONNECTED" },
-    { time: currentTime || "--", msg: "Market data engine: NOT CONNECTED" },
-    { time: currentTime || "--", msg: "Solana RPC: NOT CONNECTED" },
+    {
+      time: currentTime || "--",
+      msg: `Backend connection: ${getBackendStatus()}`,
+    },
+    {
+      time: currentTime || "--",
+      msg: `Database: ${getDbStatus()}`,
+    },
+    {
+      time: currentTime || "--",
+      msg: `Trading engine: ${getTradingEngineStatus()}`,
+    },
+    { time: currentTime || "--", msg: "Phase 2 health check active" },
   ];
 
   const StatusBadge = ({ status, variant = "blocked" }) => {
@@ -107,10 +186,22 @@ export default function Home() {
       blocked: "bg-red-900/60 text-red-300 border-red-700",
       offline: "bg-zinc-800 text-zinc-400 border-zinc-600",
       waiting: "bg-amber-900/40 text-amber-300 border-amber-700",
+      connected: "bg-emerald-900/50 text-emerald-300 border-emerald-700",
+      error: "bg-red-900/60 text-red-300 border-red-700",
+      checking: "bg-zinc-800 text-zinc-400 border-zinc-600",
     };
+
+    let v = variant;
+    const s = (status || "").toUpperCase();
+    if (s === "CONNECTED") v = "connected";
+    else if (s === "ERROR" || s === "NOT_CONFIGURED") v = "error";
+    else if (s === "CHECKING..." || s === "CHECKING") v = "checking";
+    else if (s === "NOT CONNECTED" || s === "NOT_CONNECTED") v = "offline";
+    else if (s === "BLOCKED") v = "blocked";
+
     return (
       <span
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${colors[variant] || colors.blocked}`}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${colors[v] || colors.blocked}`}
       >
         <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
         {status}
@@ -170,7 +261,7 @@ export default function Home() {
                   SOLANA AI TRADER
                 </h1>
                 <p className="text-[10px] sm:text-xs text-zinc-500 leading-none">
-                  PHASE 1 FOUNDATION
+                  PHASE 2 — BACKEND FOUNDATION
                 </p>
               </div>
             </div>
@@ -256,7 +347,7 @@ export default function Home() {
       </div>
 
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        {/* TRADING STATUS */}
+        {/* TRADING STATUS — ALWAYS BLOCKED IN PHASE 2 */}
         <div className="bg-gradient-to-r from-red-950/40 to-zinc-900 border border-red-900/50 rounded-xl p-4 sm:p-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -267,11 +358,11 @@ export default function Home() {
                 <StatusBadge status="BLOCKED" variant="blocked" />
               </div>
               <p className="text-sm text-zinc-300">
-                Backend and mandatory trading infrastructure are not connected
-                yet.
+                Live trading is disabled in Phase 2. Trading engine not
+                implemented yet.
               </p>
               <p className="text-xs text-zinc-500 mt-1">
-                Current state: CONFIGURATION_REQUIRED → BLOCKED
+                Current state: BLOCKED — Backend foundation only
               </p>
             </div>
             <div className="text-right text-xs text-zinc-500 font-mono">
@@ -570,7 +661,7 @@ export default function Home() {
               </h2>
               <p className="text-xs text-zinc-400 mb-4">
                 Backend kill switch not connected. This control is visual only
-                and cannot execute any action in Phase 1.
+                and cannot execute any action in Phase 2.
               </p>
               <button
                 disabled
@@ -582,21 +673,27 @@ export default function Home() {
           </>
         )}
 
-        {/* SYSTEM HEALTH + API + LOGS (always visible on dashboard) */}
+        {/* SYSTEM HEALTH + API + LOGS */}
         {(activeSection === "dashboard" || activeSection === "settings") && (
           <>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <SectionCard title="System Health">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {systemHealthItems.map((item) => (
-                    <div
-                      key={item}
-                      className="flex items-center justify-between bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2"
-                    >
-                      <span className="text-xs text-zinc-400">{item}</span>
-                      <StatusBadge status="NOT CONNECTED" variant="offline" />
-                    </div>
-                  ))}
+                  {systemHealthItems.map((item) => {
+                    let status = "NOT CONNECTED";
+                    if (item === "DATABASE") status = getDbStatus();
+                    else if (item === "BACKGROUND WORKERS")
+                      status = "NOT CONNECTED";
+                    return (
+                      <div
+                        key={item}
+                        className="flex items-center justify-between bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2"
+                      >
+                        <span className="text-xs text-zinc-400">{item}</span>
+                        <StatusBadge status={status} />
+                      </div>
+                    );
+                  })}
                 </div>
               </SectionCard>
 
@@ -608,7 +705,7 @@ export default function Home() {
                       className="flex items-center justify-between bg-zinc-950/50 border border-zinc-800 rounded-lg px-3 py-2.5"
                     >
                       <span className="text-sm text-zinc-300">{p}</span>
-                      <StatusBadge status="NOT CONNECTED" variant="offline" />
+                      <StatusBadge status={getProviderStatus(p)} />
                     </div>
                   ))}
                 </div>
@@ -648,8 +745,10 @@ export default function Home() {
       {/* FOOTER */}
       <footer className="border-t border-zinc-800 mt-8 py-4">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-zinc-600">
-          <span>Solana AI Trader — Phase 1 Foundation</span>
-          <span className="font-mono">SYSTEM BLOCKED • NO BACKEND</span>
+          <span>Solana AI Trader — Phase 2 Backend Foundation</span>
+          <span className="font-mono">
+            SYSTEM BLOCKED • TRADING ENGINE OFF
+          </span>
         </div>
       </footer>
     </div>
