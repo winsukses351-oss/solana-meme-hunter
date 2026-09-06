@@ -1,14 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
- * Solana AI Meme Coin Hunter v6
- * - Manual buy approve (Phantom)
- * - Auto TP/SL → auto prepare SELL → you only approve in Phantom
- * - Compounding profit on buy size
- * - Real quotes via Jupiter + real prices via DexScreener
- * - NO private keys in this file
+ * Solana Meme Hunter v6.1 — mobile wallet fix
+ * Open this site INSIDE Phantom browser on phone for best results.
  */
 
 const SOL_MINT = 'So11111111111111111111111111111111111111112'
@@ -20,8 +16,7 @@ const BLOCKED_MINTS = new Set([
 const BLOCKED_SYMBOLS = new Set(['SOL', 'WSOL', 'USDC', 'USDT', 'BTC', 'ETH'])
 const JUPITER_QUOTE = 'https://quote-api.jup.ag/v6/quote'
 const JUPITER_SWAP = 'https://quote-api.jup.ag/v6/swap'
-const STATE_KEY = 'meme_hunter_v6'
-const API_KEY = 'meme_hunter_v6_apis'
+const STATE_KEY = 'meme_hunter_v61'
 
 function money(n) {
   if (n == null || Number.isNaN(n)) return '—'
@@ -58,6 +53,25 @@ function saveJSON(key, val) {
   try {
     localStorage.setItem(key, JSON.stringify(val))
   } catch (_) {}
+}
+
+/** Mobile + desktop Phantom provider */
+function getProvider() {
+  if (typeof window === 'undefined') return null
+  const w = window
+  if (w.solana && w.solana.isPhantom) return w.solana
+  if (w.phantom && w.phantom.solana && w.phantom.solana.isPhantom) return w.phantom.solana
+  if (w.solana) return w.solana
+  return null
+}
+
+function openInPhantom() {
+  if (typeof window === 'undefined') return
+  const url = window.location.href
+  // Phantom universal link — opens site inside Phantom browser
+  const deep =
+    'https://phantom.app/ul/browse/' + encodeURIComponent(url) + '?ref=' + encodeURIComponent(url)
+  window.location.href = deep
 }
 
 function CategoryTag({ category }) {
@@ -99,9 +113,8 @@ function safetyScore(t) {
   else if (liq < 5000) {
     score -= 35
     if (liq < 1500) blocked = true
-  } else if (liq >= 20000 && liq <= 500000) score += 5
+  }
   if (t.price_change_5m != null && Math.abs(t.price_change_5m) > 90) score -= 20
-  if (t.buy_sell_ratio != null && t.buy_sell_ratio < 0.5) score -= 15
   score = Math.max(0, Math.min(100, score))
   if (score < 35) blocked = true
   return { score: score, blocked: blocked }
@@ -111,11 +124,9 @@ function momentumScore(t) {
   let score = 45
   const pc5 = t.price_change_5m
   const pc1 = t.price_change_1h
-  const pc24 = t.price_change_24h
   if (pc5 != null) {
     if (pc5 >= 3 && pc5 <= 35) score += 15
     else if (pc5 > 35 && pc5 <= 80) score += 8
-    else if (pc5 > 80) score -= 5
     else if (pc5 < -20) score -= 18
   }
   if (pc1 != null) {
@@ -123,19 +134,13 @@ function momentumScore(t) {
     else if (pc1 > 60) score += 6
     else if (pc1 < -25) score -= 15
   }
-  if (pc24 != null && pc24 > 20 && pc24 < 200) score += 8
   const vol = t.volume_24h || 0
   const liq = t.liquidity_usd || 0
   if (vol > 0 && liq > 0) {
     const ratio = vol / liq
     if (ratio >= 0.3 && ratio <= 12) score += 12
-    else if (ratio > 12) score += 4
   }
-  if (t.buy_sell_ratio != null) {
-    if (t.buy_sell_ratio >= 1.4) score += 14
-    else if (t.buy_sell_ratio >= 1.1) score += 6
-    else if (t.buy_sell_ratio < 0.75) score -= 14
-  }
+  if (t.buy_sell_ratio != null && t.buy_sell_ratio >= 1.4) score += 14
   if ((t.mint || '').toLowerCase().endsWith('pump')) score += 4
   return Math.max(0, Math.min(100, score))
 }
@@ -206,28 +211,6 @@ async function fetchPairs(q) {
   return Array.isArray(data.pairs) ? data.pairs : []
 }
 
-async function fetchBoosts() {
-  try {
-    const res = await fetch('https://api.dexscreener.com/token-boosts/latest/v1')
-    if (!res.ok) return []
-    const data = await res.json()
-    return Array.isArray(data) ? data : []
-  } catch {
-    return []
-  }
-}
-
-async function fetchPairsByToken(mint) {
-  try {
-    const res = await fetch('https://api.dexscreener.com/token-pairs/v1/solana/' + mint)
-    if (!res.ok) return []
-    const data = await res.json()
-    return Array.isArray(data) ? data : []
-  } catch {
-    return []
-  }
-}
-
 async function jupiterQuote(inputMint, outputMint, amount, slippageBps) {
   const params = new URLSearchParams({
     inputMint: inputMint,
@@ -255,87 +238,115 @@ async function jupiterSwap(quoteResponse, userPublicKey) {
   return res.json()
 }
 
-async function signAndSend(swapTxB64) {
-  if (!(window.solanaWeb3 && window.solanaWeb3.VersionedTransaction)) {
-    throw new Error(
-      'Tambahkan @solana/web3.js di project Next agar sign swap stabil (lihat catatan di bawah).'
-    )
+async function signAndSend(swapTxB64, provider) {
+  // Prefer wallet adapter style: signAndSendTransaction with serialized tx if web3 available
+  if (window.solanaWeb3 && window.solanaWeb3.VersionedTransaction) {
+    const binary = atob(swapTxB64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    const tx = window.solanaWeb3.VersionedTransaction.deserialize(bytes)
+    const signed = await provider.signAndSendTransaction(tx)
+    return String(signed.signature || signed)
   }
-  const binary = atob(swapTxB64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  const tx = window.solanaWeb3.VersionedTransaction.deserialize(bytes)
-  const signed = await window.solana.signAndSendTransaction(tx)
-  return String(signed.signature || signed)
+  // Fallback: some Phantom builds accept request
+  if (provider.request) {
+    try {
+      const ret = await provider.request({
+        method: 'signAndSendTransaction',
+        params: { message: swapTxB64 },
+      })
+      if (ret && (ret.signature || ret)) return String(ret.signature || ret)
+    } catch (_) {}
+  }
+  throw new Error(
+    'Swap perlu @solana/web3.js. Atau buka token di Jupiter/DexScreener untuk trade manual.'
+  )
 }
 
 const css = {
-  shell: {
-    display: 'flex',
+  page: {
     minHeight: '100vh',
     background: '#0b0e11',
     color: '#eaecef',
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    paddingBottom: 40,
   },
-  sidebar: {
-    width: 210,
-    flexShrink: 0,
-    background: '#12161c',
-    borderRight: '1px solid #1e2329',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '14px 10px',
+  header: {
     position: 'sticky',
     top: 0,
-    height: '100vh',
-    boxSizing: 'border-box',
+    zIndex: 40,
+    background: '#12161c',
+    borderBottom: '1px solid #1e2329',
+    padding: '10px 12px',
   },
-  brand: { fontSize: 13, fontWeight: 700, marginBottom: 2 },
-  brandSub: { fontSize: 10, color: '#848e9c', marginBottom: 14 },
-  sideBtn: {
-    width: '100%',
-    textAlign: 'left',
-    background: 'transparent',
-    border: '1px solid transparent',
-    color: '#848e9c',
-    padding: '9px 10px',
+  title: { fontSize: 14, fontWeight: 700, margin: 0 },
+  row: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 8 },
+  btn: {
+    background: '#f0b90b',
+    color: '#000',
+    border: 'none',
+    padding: '10px 14px',
     borderRadius: 8,
+    fontWeight: 700,
     cursor: 'pointer',
-    fontSize: 12,
-    marginBottom: 3,
+    fontSize: 13,
   },
-  sideActive: {
-    background: 'rgba(240,185,11,0.1)',
-    border: '1px solid rgba(240,185,11,0.35)',
+  btnGhost: {
+    background: '#2b2f36',
     color: '#eaecef',
+    border: 'none',
+    padding: '10px 14px',
+    borderRadius: 8,
     fontWeight: 650,
+    cursor: 'pointer',
+    fontSize: 13,
   },
-  sideFoot: { marginTop: 'auto', paddingTop: 10 },
-  main: { flex: 1, minWidth: 0, padding: '12px 12px 36px' },
-  topbar: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
+  btnSm: {
+    background: '#f0b90b',
+    color: '#000',
+    border: 'none',
+    padding: '6px 10px',
+    borderRadius: 6,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontSize: 11,
   },
+  btnSell: {
+    background: '#f6465d',
+    color: '#fff',
+    border: 'none',
+    padding: '6px 10px',
+    borderRadius: 6,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontSize: 11,
+  },
+  disabled: { opacity: 0.45, cursor: 'not-allowed' },
   badge: {
     fontSize: 10,
-    padding: '3px 7px',
+    padding: '3px 8px',
     borderRadius: 6,
     fontWeight: 650,
     background: 'rgba(240,185,11,0.15)',
     color: '#f0b90b',
   },
   badgeOk: { background: 'rgba(14,203,129,0.15)', color: '#0ecb81' },
-  badgeAuto: { background: 'rgba(59,130,246,0.2)', color: '#3b82f6' },
-  msg: { color: '#f0b90b', fontSize: 12, marginBottom: 8, minHeight: 16 },
+  main: { padding: 12, maxWidth: 900, margin: '0 auto' },
+  msg: { color: '#f0b90b', fontSize: 12, margin: '8px 0', minHeight: 16 },
+  alert: {
+    background: 'rgba(240,185,11,0.08)',
+    border: '1px solid rgba(240,185,11,0.35)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    fontSize: 12,
+    lineHeight: 1.5,
+  },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   stat: {
     background: '#12161c',
@@ -344,106 +355,48 @@ const css = {
     padding: 10,
   },
   label: { fontSize: 10, color: '#848e9c', marginBottom: 3 },
-  value: { fontSize: '1rem', fontWeight: 700 },
+  value: { fontSize: 15, fontWeight: 700 },
   panel: {
     background: '#12161c',
     border: '1px solid #1e2329',
     borderRadius: 8,
+    marginBottom: 12,
     overflow: 'hidden',
-    marginBottom: 10,
   },
   panelH: {
+    padding: '10px 12px',
+    borderBottom: '1px solid #1e2329',
+    fontWeight: 650,
+    fontSize: 13,
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap',
-    padding: '9px 11px',
-    borderBottom: '1px solid #1e2329',
-    fontWeight: 650,
-    fontSize: 12,
   },
-  panelB: { padding: 8, overflowX: 'auto' },
+  panelB: { padding: 10 },
+  tabs: { display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 },
+  tab: {
+    background: '#2b2f36',
+    color: '#848e9c',
+    border: 'none',
+    padding: '8px 12px',
+    borderRadius: 8,
+    fontSize: 12,
+    cursor: 'pointer',
+  },
+  tabOn: { background: 'rgba(240,185,11,0.15)', color: '#eaecef', fontWeight: 650 },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: 11 },
   th: {
     textAlign: 'left',
     color: '#848e9c',
-    fontWeight: 500,
-    padding: '7px 5px',
+    padding: '6px 4px',
     borderBottom: '1px solid #1e2329',
-    whiteSpace: 'nowrap',
   },
   td: {
-    padding: '8px 5px',
+    padding: '8px 4px',
     borderBottom: '1px solid #1e2329',
     whiteSpace: 'nowrap',
-    verticalAlign: 'middle',
-  },
-  btn: {
-    background: '#f0b90b',
-    color: '#000',
-    border: 'none',
-    padding: '7px 11px',
-    borderRadius: 6,
-    fontWeight: 700,
-    cursor: 'pointer',
-    fontSize: 12,
-  },
-  btnSm: {
-    background: '#f0b90b',
-    color: '#000',
-    border: 'none',
-    padding: '4px 7px',
-    borderRadius: 5,
-    fontWeight: 700,
-    cursor: 'pointer',
-    fontSize: 10,
-  },
-  btnSell: {
-    background: '#f6465d',
-    color: '#fff',
-    border: 'none',
-    padding: '4px 7px',
-    borderRadius: 5,
-    fontWeight: 700,
-    cursor: 'pointer',
-    fontSize: 10,
-  },
-  btnSecondary: {
-    background: '#2b2f36',
-    color: '#eaecef',
-    border: 'none',
-    padding: '7px 11px',
-    borderRadius: 6,
-    fontWeight: 650,
-    cursor: 'pointer',
-    fontSize: 12,
-    width: '100%',
-  },
-  btnDisabled: { opacity: 0.45, cursor: 'not-allowed' },
-  muted: { color: '#848e9c' },
-  formGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: 9,
-  },
-  input: {
-    width: '100%',
-    background: '#0b0e11',
-    border: '1px solid #1e2329',
-    color: '#eaecef',
-    padding: '7px 9px',
-    borderRadius: 6,
-    fontSize: 12,
-    boxSizing: 'border-box',
-  },
-  footer: { textAlign: 'center', color: '#848e9c', fontSize: 10, padding: 12 },
-  logBox: {
-    maxHeight: 160,
-    overflowY: 'auto',
-    fontFamily: 'monospace',
-    fontSize: 10,
-    color: '#848e9c',
   },
   card: {
     background: '#0b0e11',
@@ -452,54 +405,52 @@ const css = {
     padding: 10,
     marginBottom: 8,
   },
+  input: {
+    width: '100%',
+    background: '#0b0e11',
+    border: '1px solid #1e2329',
+    color: '#eaecef',
+    padding: '8px 10px',
+    borderRadius: 6,
+    fontSize: 13,
+    boxSizing: 'border-box',
+  },
+  muted: { color: '#848e9c', fontSize: 12, lineHeight: 1.5 },
+  formGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+    gap: 8,
+  },
 }
 
 export default function Page() {
   const saved = typeof window !== 'undefined' ? loadJSON(STATE_KEY, {}) : {}
-  const savedApi = typeof window !== 'undefined' ? loadJSON(API_KEY, {}) : {}
-
-  const [tab, setTab] = useState('dashboard')
+  const [tab, setTab] = useState('home')
+  const [wallet, setWallet] = useState(null)
+  const [providerOn, setProviderOn] = useState(false)
+  const [msg, setMsg] = useState('')
   const [tokens, setTokens] = useState([])
   const [loading, setLoading] = useState(false)
-  const [msg, setMsg] = useState('')
-  const [lastScan, setLastScan] = useState(null)
-  const [wallet, setWallet] = useState(null)
-  const [busy, setBusy] = useState(null)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [logs, setLogs] = useState([])
   const [positions, setPositions] = useState(saved.positions || [])
-  const [closedTrades, setClosedTrades] = useState(saved.closedTrades || [])
-
-  // sizing + compound
-  const [baseBuySol, setBaseBuySol] = useState(saved.baseBuySol || 0.01)
-  const [currentBuySol, setCurrentBuySol] = useState(saved.currentBuySol || 0.01)
-  const [compoundPct, setCompoundPct] = useState(saved.compoundPct != null ? saved.compoundPct : 50)
-  const [compoundOn, setCompoundOn] = useState(saved.compoundOn != null ? saved.compoundOn : true)
-  const [realizedPnlSol, setRealizedPnlSol] = useState(saved.realizedPnlSol || 0)
-
-  // risk
-  const [tradingArmed, setTradingArmed] = useState(false)
-  const [autoSell, setAutoSell] = useState(true)
-  const [autoBuySignal, setAutoBuySignal] = useState(false)
-  const [slippageBps, setSlippageBps] = useState(150)
-  const [minOpp, setMinOpp] = useState(78)
-  const [maxOpen, setMaxOpen] = useState(2)
+  const [armed, setArmed] = useState(false)
+  const [autoTpsl, setAutoTpsl] = useState(true)
+  const [buySol, setBuySol] = useState(saved.buySol || 0.01)
+  const [baseBuy, setBaseBuy] = useState(saved.baseBuy || 0.01)
+  const [compoundOn, setCompoundOn] = useState(true)
+  const [compoundPct, setCompoundPct] = useState(50)
+  const [realized, setRealized] = useState(saved.realized || 0)
   const [tpPct, setTpPct] = useState(40)
   const [slPct, setSlPct] = useState(20)
-  const [scanSec, setScanSec] = useState(40)
-  const [onlyPump, setOnlyPump] = useState(false)
-  const [minLiq, setMinLiq] = useState(5000)
-  const [minVol, setMinVol] = useState(1000)
-  const [maxLiq, setMaxLiq] = useState(1500000)
-
-  // token amount for sell: we store estimated token raw amount from buy quote when possible
+  const [minOpp, setMinOpp] = useState(78)
+  const [slippage, setSlippage] = useState(150)
+  const [busy, setBusy] = useState(null)
+  const [logs, setLogs] = useState([])
+  const posRef = useRef(positions)
   const sellLock = useRef({})
-  const positionsRef = useRef(positions)
-  const busyRef = useRef(false)
 
   useEffect(
     function () {
-      positionsRef.current = positions
+      posRef.current = positions
     },
     [positions]
   )
@@ -508,483 +459,355 @@ export default function Page() {
     function () {
       saveJSON(STATE_KEY, {
         positions: positions,
-        closedTrades: closedTrades,
-        baseBuySol: baseBuySol,
-        currentBuySol: currentBuySol,
-        compoundPct: compoundPct,
-        compoundOn: compoundOn,
-        realizedPnlSol: realizedPnlSol,
+        buySol: buySol,
+        baseBuy: baseBuy,
+        realized: realized,
       })
     },
-    [positions, closedTrades, baseBuySol, currentBuySol, compoundPct, compoundOn, realizedPnlSol]
+    [positions, buySol, baseBuy, realized]
   )
 
   function pushLog(t) {
-    const line = new Date().toLocaleTimeString() + ' · ' + t
     setLogs(function (p) {
-      return [line].concat(p).slice(0, 100)
+      return [new Date().toLocaleTimeString() + ' · ' + t].concat(p).slice(0, 60)
     })
   }
 
+  function refreshProvider() {
+    const p = getProvider()
+    setProviderOn(!!p)
+    if (p && p.publicKey) {
+      try {
+        setWallet(p.publicKey.toString())
+      } catch (_) {}
+    }
+    return p
+  }
+
+  useEffect(function () {
+    refreshProvider()
+    const t = setInterval(refreshProvider, 2000)
+    return function () {
+      clearInterval(t)
+    }
+  }, [])
+
   const connectWallet = async function () {
+    setMsg('Connecting…')
+    let p = getProvider()
+    if (!p) {
+      setMsg('Phantom tidak terdeteksi di browser ini')
+      pushLog('No provider — open inside Phantom')
+      return
+    }
     try {
-      const p = window.solana
-      if (!p || !p.isPhantom) {
-        setMsg('Install / buka Phantom di HP')
-        return
-      }
-      const res = await p.connect()
+      // Mobile often needs onlyIfTrusted: false
+      const res = await p.connect({ onlyIfTrusted: false })
       const pk =
-        (res.publicKey && res.publicKey.toString()) ||
+        (res && res.publicKey && res.publicKey.toString()) ||
         (p.publicKey && p.publicKey.toString())
+      if (!pk) throw new Error('No public key returned')
       setWallet(pk)
-      setMsg('Connected ' + shortAddr(pk))
-      pushLog('Wallet connected')
+      setProviderOn(true)
+      setMsg('Wallet connected: ' + shortAddr(pk))
+      pushLog('Connected ' + shortAddr(pk))
     } catch (e) {
       setMsg(String(e.message || e))
+      pushLog('Connect fail: ' + String(e.message || e))
     }
   }
 
   const disconnectWallet = async function () {
     try {
-      if (window.solana && window.solana.disconnect) await window.solana.disconnect()
+      const p = getProvider()
+      if (p && p.disconnect) await p.disconnect()
     } catch (_) {}
     setWallet(null)
-    setTradingArmed(false)
-    setAutoBuySignal(false)
+    setArmed(false)
+    setMsg('Disconnected')
   }
 
-  /** Apply compounding after a closed profitable trade (pnlSol estimated) */
-  function applyCompound(pnlSol) {
-    setRealizedPnlSol(function (r) {
-      return r + pnlSol
-    })
-    if (!compoundOn || pnlSol <= 0) return
-    const add = pnlSol * (compoundPct / 100)
-    setCurrentBuySol(function (c) {
-      const next = Math.max(baseBuySol, c + add)
-      pushLog(
-        'Compound +' +
-          num(add, 4) +
-          ' SOL → next buy ' +
-          num(next, 4) +
-          ' SOL'
-      )
-      return Math.round(next * 1e6) / 1e6
-    })
-  }
-
-  const executeBuy = async function (token, source) {
-    if (!wallet || !tradingArmed) {
-      setMsg('Connect + Arm trading dulu')
-      return false
-    }
-    if (token.safety_blocked || (token.opportunity_score || 0) < minOpp) return false
-    if (positionsRef.current.filter(function (p) {
-      return p.status === 'open'
-    }).length >= maxOpen) {
-      pushLog('Max open positions')
-      return false
-    }
-    if (
-      positionsRef.current.some(function (p) {
-        return p.mint === token.mint && p.status === 'open'
-      })
-    )
-      return false
-
-    const lamports = Math.floor(Number(currentBuySol) * 1e9)
-    if (lamports < 1000) return false
-
-    setBusy('buy:' + token.mint)
-    setMsg('BUY quote ' + token.symbol + ' — approve di Phantom')
-    pushLog((source || 'BUY') + ' ' + token.symbol + ' ' + currentBuySol + ' SOL')
+  const scan = useCallback(async function () {
+    setLoading(true)
     try {
-      const quote = await jupiterQuote(SOL_MINT, token.mint, lamports, slippageBps)
+      const queries = ['pump', 'meme', 'bonk', 'pepe', 'ai']
+      const all = []
+      for (let i = 0; i < queries.length; i++) {
+        try {
+          const pairs = await fetchPairs(queries[i])
+          for (let j = 0; j < pairs.length; j++) all.push(pairs[j])
+        } catch (_) {}
+      }
+      const seen = {}
+      const scored = []
+      for (let i = 0; i < all.length; i++) {
+        const pair = all[i]
+        if (!pair) continue
+        const chain = (pair.chainId || '').toLowerCase()
+        if (chain && chain !== 'solana') continue
+        const n = normalizePair(pair)
+        if (!n.mint || seen[n.mint] || !isMemeCandidate(n)) continue
+        const liq = n.liquidity_usd || 0
+        if (liq < 3000 && (n.volume_24h || 0) < 500) continue
+        if (liq > 2e6) continue
+        seen[n.mint] = true
+        scored.push(scoreToken(n))
+      }
+      scored.sort(function (a, b) {
+        return (b.opportunity_score || 0) - (a.opportunity_score || 0)
+      })
+      setTokens(scored.slice(0, 40))
+      setMsg('Scan: ' + scored.length + ' tokens')
+
+      // mark positions + TP/SL
+      const prices = {}
+      for (let i = 0; i < scored.length; i++) {
+        if (scored[i].mint) prices[scored[i].mint] = scored[i].price_usd
+      }
+      const updated = posRef.current.map(function (p) {
+        if (p.status !== 'open') return p
+        const px = prices[p.mint]
+        if (px == null) return p
+        const pnl = p.entry_price > 0 ? ((px - p.entry_price) / p.entry_price) * 100 : 0
+        return Object.assign({}, p, { current_price: px, unrealized_pnl_pct: pnl })
+      })
+      setPositions(updated)
+
+      if (autoTpsl && wallet) {
+        for (let i = 0; i < updated.length; i++) {
+          const p = updated[i]
+          if (p.status !== 'open' || p.current_price == null) continue
+          if (p.current_price >= p.take_profit) {
+            await executeSell(p, 'TP')
+            break
+          }
+          if (p.current_price <= p.stop_loss) {
+            await executeSell(p, 'SL')
+            break
+          }
+        }
+      }
+    } catch (e) {
+      setMsg(String(e.message || e))
+    } finally {
+      setLoading(false)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoTpsl, wallet])
+
+  useEffect(
+    function () {
+      scan()
+      const id = setInterval(scan, 40000)
+      return function () {
+        clearInterval(id)
+      }
+    },
+    [scan]
+  )
+
+  const executeBuy = async function (token) {
+    const p = getProvider()
+    if (!wallet || !p) {
+      setMsg('Connect wallet dulu')
+      return
+    }
+    if (!armed) {
+      setMsg('Centang Arm trading dulu')
+      return
+    }
+    if (token.safety_blocked || (token.opportunity_score || 0) < minOpp) {
+      setMsg('Token tidak lolos filter')
+      return
+    }
+    const lamports = Math.floor(Number(buySol) * 1e9)
+    if (lamports < 1000) {
+      setMsg('Buy size terlalu kecil')
+      return
+    }
+    setBusy('buy')
+    setMsg('Menyiapkan BUY — approve di Phantom…')
+    pushLog('BUY ' + token.symbol)
+    try {
+      const quote = await jupiterQuote(SOL_MINT, token.mint, lamports, slippage)
       const outAmt = quote.outAmount ? String(quote.outAmount) : null
       const swap = await jupiterSwap(quote, wallet)
-      if (!swap.swapTransaction) throw new Error('No swap tx')
-      const sig = await signAndSend(swap.swapTransaction)
+      if (!swap.swapTransaction) throw new Error('No swapTransaction')
+      const sig = await signAndSend(swap.swapTransaction, p)
       const entry = token.price_usd || 0
-      const pos = {
-        id: sig.slice(0, 18),
-        mint: token.mint,
-        symbol: token.symbol,
-        entry_price: entry,
-        amount_sol: currentBuySol,
-        token_amount_raw: outAmt,
-        status: 'open',
-        opened_at: new Date().toISOString(),
-        take_profit: entry * (1 + tpPct / 100),
-        stop_loss: entry * (1 - slPct / 100),
-        tx_buy: sig,
-        url: token.url,
-      }
       setPositions(function (prev) {
-        return [pos].concat(prev)
+        return [
+          {
+            id: String(sig).slice(0, 18),
+            mint: token.mint,
+            symbol: token.symbol,
+            entry_price: entry,
+            amount_sol: buySol,
+            token_amount_raw: outAmt,
+            status: 'open',
+            take_profit: entry * (1 + tpPct / 100),
+            stop_loss: entry * (1 - slPct / 100),
+            tx_buy: sig,
+            opened_at: new Date().toISOString(),
+          },
+        ].concat(prev)
       })
       setMsg('BUY OK ' + token.symbol)
-      pushLog('BUY OK ' + sig.slice(0, 16))
-      return true
+      pushLog('BUY OK')
     } catch (e) {
       setMsg(String(e.message || e))
       pushLog('BUY fail ' + String(e.message || e))
-      return false
     } finally {
       setBusy(null)
     }
   }
 
   const executeSell = async function (pos, reason) {
-    if (!wallet) {
-      setMsg('Connect Phantom')
-      return false
+    const p = getProvider()
+    if (!wallet || !p) {
+      setMsg('Connect wallet')
+      return
     }
-    if (sellLock.current[pos.id]) return false
+    if (sellLock.current[pos.id]) return
     sellLock.current[pos.id] = true
-    setBusy('sell:' + pos.id)
-    setMsg('SELL ' + pos.symbol + ' (' + reason + ') — approve di Phantom')
+    setBusy('sell')
+    setMsg('SELL ' + pos.symbol + ' (' + reason + ') — approve Phantom')
     pushLog('SELL ' + pos.symbol + ' ' + reason)
     try {
-      // Need token amount: use stored raw from buy, or fetch balance via RPC is complex;
-      // Prefer stored outAmount from buy quote.
-      let amount = pos.token_amount_raw
-      if (!amount) {
-        throw new Error(
-          'Token amount unknown — buka DexScreener/Jupiter manual untuk sell, atau buy ulang agar amount tersimpan'
-        )
+      if (!pos.token_amount_raw) {
+        throw new Error('Amount token tidak tersimpan — sell manual di Jupiter')
       }
-      // Sell 100% of recorded amount (raw integer string)
-      const quote = await jupiterQuote(pos.mint, SOL_MINT, amount, slippageBps)
+      const quote = await jupiterQuote(pos.mint, SOL_MINT, pos.token_amount_raw, slippage)
       const swap = await jupiterSwap(quote, wallet)
-      if (!swap.swapTransaction) throw new Error('No swap tx')
-      const sig = await signAndSend(swap.swapTransaction)
-
+      if (!swap.swapTransaction) throw new Error('No swapTransaction')
+      const sig = await signAndSend(swap.swapTransaction, p)
       const exitPx = pos.current_price != null ? pos.current_price : pos.entry_price
       const pnlPct =
         pos.entry_price > 0 ? ((exitPx - pos.entry_price) / pos.entry_price) * 100 : 0
-      // Estimate pnl in SOL from % * amount_sol (approximation)
       const pnlSol = (pnlPct / 100) * (pos.amount_sol || 0)
-
       setPositions(function (prev) {
-        return prev.map(function (p) {
-          if (p.id !== pos.id) return p
-          return Object.assign({}, p, {
+        return prev.map(function (x) {
+          if (x.id !== pos.id) return x
+          return Object.assign({}, x, {
             status: 'closed',
-            closed_at: new Date().toISOString(),
-            exit_price: exitPx,
             pnl_pct: pnlPct,
             pnl_sol: pnlSol,
-            tx_sell: sig,
             close_reason: reason,
+            tx_sell: sig,
           })
         })
       })
-      setClosedTrades(function (prev) {
-        return [
-          {
-            symbol: pos.symbol,
-            pnl_pct: pnlPct,
-            pnl_sol: pnlSol,
-            reason: reason,
-            at: new Date().toISOString(),
-          },
-        ].concat(prev).slice(0, 50)
+      setRealized(function (r) {
+        return r + pnlSol
       })
-      applyCompound(pnlSol)
-      setMsg('SELL OK ' + pos.symbol + ' ' + formatPct(pnlPct))
-      pushLog('SELL OK ' + pos.symbol + ' ' + formatPct(pnlPct))
-      return true
+      if (compoundOn && pnlSol > 0) {
+        const add = pnlSol * (compoundPct / 100)
+        setBuySol(function (c) {
+          return Math.round((c + add) * 1e6) / 1e6
+        })
+        pushLog('Compound +' + num(add, 4) + ' SOL')
+      }
+      setMsg('SELL OK ' + formatPct(pnlPct))
+      pushLog('SELL OK')
     } catch (e) {
       setMsg(String(e.message || e))
       pushLog('SELL fail ' + String(e.message || e))
-      return false
     } finally {
       setBusy(null)
       delete sellLock.current[pos.id]
     }
   }
 
-  const scan = useCallback(
-    async function () {
-      setLoading(true)
-      try {
-        const queries = ['pump', 'meme', 'bonk', 'pepe', 'ai', 'dog']
-        const all = []
-        for (let i = 0; i < queries.length; i++) {
-          try {
-            const pairs = await fetchPairs(queries[i])
-            for (let j = 0; j < pairs.length; j++) all.push(pairs[j])
-          } catch (_) {}
-        }
-        const boosts = await fetchBoosts()
-        for (let i = 0; i < Math.min(10, boosts.length); i++) {
-          const b = boosts[i]
-          if ((b.chainId || '').toLowerCase() !== 'solana' || !b.tokenAddress) continue
-          try {
-            const pairs = await fetchPairsByToken(b.tokenAddress)
-            for (let j = 0; j < pairs.length; j++) all.push(pairs[j])
-          } catch (_) {}
-        }
-
-        const seen = {}
-        const scored = []
-        for (let i = 0; i < all.length; i++) {
-          const pair = all[i]
-          if (!pair || typeof pair !== 'object') continue
-          const chain = (pair.chainId || '').toLowerCase()
-          if (chain && chain !== 'solana') continue
-          const n = normalizePair(pair)
-          if (!n.mint || seen[n.mint]) continue
-          if (!isMemeCandidate(n)) continue
-          if (onlyPump && !(n.mint || '').toLowerCase().endsWith('pump')) continue
-          const liq = n.liquidity_usd || 0
-          const vol = n.volume_24h || 0
-          if (liq < minLiq && vol < minVol) continue
-          if (liq > maxLiq) continue
-          seen[n.mint] = true
-          scored.push(scoreToken(n))
-        }
-        scored.sort(function (a, b) {
-          return (b.opportunity_score || 0) - (a.opportunity_score || 0)
-        })
-        setTokens(scored.slice(0, 50))
-        setLastScan(new Date().toISOString())
-        setMsg('Scan OK · ' + scored.length + ' candidates')
-
-        // Update position marks + TP/SL auto sell prompts
-        const priceMap = {}
-        for (let i = 0; i < scored.length; i++) {
-          if (scored[i].mint) priceMap[scored[i].mint] = scored[i].price_usd
-        }
-
-        const open = positionsRef.current.filter(function (p) {
-          return p.status === 'open'
-        })
-        const updated = positionsRef.current.map(function (p) {
-          if (p.status !== 'open') return p
-          const px = priceMap[p.mint]
-          if (px == null) return p
-          const pnlPct =
-            p.entry_price > 0 ? ((px - p.entry_price) / p.entry_price) * 100 : 0
-          return Object.assign({}, p, {
-            current_price: px,
-            unrealized_pnl_pct: pnlPct,
-          })
-        })
-        setPositions(updated)
-
-        if (autoSell && wallet) {
-          for (let i = 0; i < updated.length; i++) {
-            const p = updated[i]
-            if (p.status !== 'open' || p.current_price == null) continue
-            if (p.current_price >= p.take_profit) {
-              pushLog('TP hit ' + p.symbol)
-              await executeSell(p, 'TP')
-              break
-            }
-            if (p.current_price <= p.stop_loss) {
-              pushLog('SL hit ' + p.symbol)
-              await executeSell(p, 'SL')
-              break
-            }
-          }
-        }
-
-        return scored
-      } catch (e) {
-        setMsg(String(e.message || e))
-        return []
-      } finally {
-        setLoading(false)
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [onlyPump, minLiq, minVol, maxLiq, autoSell, wallet, slippageBps]
-  )
-
-  // periodic scan
-  useEffect(
-    function () {
-      scan()
-      const id = setInterval(function () {
-        scan()
-      }, Math.max(20, scanSec) * 1000)
-      return function () {
-        clearInterval(id)
-      }
-    },
-    [scan, scanSec]
-  )
-
-  // optional auto buy signal → still needs Phantom approve
-  useEffect(
-    function () {
-      if (!autoBuySignal || !tradingArmed || !wallet) return undefined
-      const id = setInterval(async function () {
-        if (busyRef.current) return
-        const openN = positionsRef.current.filter(function (p) {
-          return p.status === 'open'
-        }).length
-        if (openN >= maxOpen) return
-        const cand = tokens.find(function (t) {
-          return !t.safety_blocked && (t.opportunity_score || 0) >= minOpp
-        })
-        if (!cand) return
-        busyRef.current = true
-        try {
-          await executeBuy(cand, 'AUTO-SIGNAL')
-        } finally {
-          busyRef.current = false
-        }
-      }, Math.max(25, scanSec) * 1000)
-      return function () {
-        clearInterval(id)
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [autoBuySignal, tradingArmed, wallet, tokens, minOpp, maxOpen, scanSec]
-  )
-
-  useEffect(function () {
-    const p = window.solana
-    if (p && p.isPhantom && p.publicKey) setWallet(p.publicKey.toString())
-  }, [])
-
   const openPos = positions.filter(function (p) {
     return p.status === 'open'
   })
-  const top = tokens.slice(0, 12)
-  const hot = tokens.filter(function (t) {
-    return (t.opportunity_score || 0) >= 68
-  }).length
-  const unrealized = openPos.reduce(function (s, p) {
-    if (p.unrealized_pnl_pct == null || !p.amount_sol) return s
-    return s + (p.unrealized_pnl_pct / 100) * p.amount_sol
-  }, 0)
-
-  const menu = [
-    { id: 'dashboard', label: 'Dashboard' },
-    { id: 'opportunities', label: 'Opportunities' },
-    { id: 'positions', label: 'Positions' },
-    { id: 'compound', label: 'Compound' },
-    { id: 'autopilot', label: 'Auto-Pilot' },
-    { id: 'settings', label: 'Settings' },
-  ]
-
-  function renderRows(list) {
-    return list.map(function (t) {
-      const can =
-        wallet && tradingArmed && !t.safety_blocked && busy !== 'buy:' + t.mint
-      return (
-        <tr key={t.mint}>
-          <td style={css.td}>
-            {t.url ? (
-              <a href={t.url} target="_blank" rel="noreferrer" style={{ color: '#eaecef', fontWeight: 600 }}>
-                {t.symbol || '—'}
-              </a>
-            ) : (
-              t.symbol || '—'
-            )}
-          </td>
-          <td style={css.td}>{num(t.opportunity_score, 1)}</td>
-          <td style={css.td}>
-            <CategoryTag category={t.category} />
-          </td>
-          <td style={{ ...css.td, color: pctColor(t.price_change_1h) }}>
-            {formatPct(t.price_change_1h)}
-          </td>
-          <td style={css.td}>{money(t.liquidity_usd)}</td>
-          <td style={css.td}>{money(t.volume_24h)}</td>
-          <td style={css.td}>
-            <button
-              type="button"
-              style={{ ...css.btnSm, ...(can ? {} : css.btnDisabled) }}
-              disabled={!can}
-              onClick={function () {
-                executeBuy(t, 'MANUAL')
-              }}
-            >
-              Buy
-            </button>
-          </td>
-        </tr>
-      )
-    })
-  }
 
   return (
-    <div style={css.shell}>
-      <aside style={{ ...css.sidebar, display: sidebarOpen ? 'flex' : 'none' }}>
-        <div style={css.brand}>Meme Hunter</div>
-        <div style={css.brandSub}>v6 · TP/SL · Compound</div>
-        {menu.map(function (m) {
-          return (
-            <button
-              key={m.id}
-              type="button"
-              style={{ ...css.sideBtn, ...(tab === m.id ? css.sideActive : {}) }}
-              onClick={function () {
-                setTab(m.id)
-              }}
-            >
-              {m.label}
-            </button>
-          )
-        })}
-        <div style={css.sideFoot}>
-          {!wallet ? (
-            <button type="button" style={css.btn} onClick={connectWallet}>
-              Connect Phantom
-            </button>
+    <div style={css.page}>
+      <header style={css.header}>
+        <h1 style={css.title}>Solana Meme Hunter</h1>
+        <div style={css.row}>
+          <span style={{ ...css.badge, ...(wallet ? css.badgeOk : {}) }}>
+            {wallet ? shortAddr(wallet) : 'Wallet OFF'}
+          </span>
+          <span style={{ ...css.badge, ...(armed ? css.badgeOk : {}) }}>
+            {armed ? 'ARMED' : 'DISARMED'}
+          </span>
+          {providerOn ? (
+            <span style={{ ...css.badge, ...css.badgeOk }}>Phantom detected</span>
           ) : (
-            <button type="button" style={css.btnSecondary} onClick={disconnectWallet}>
-              {shortAddr(wallet)}
-            </button>
+            <span style={css.badge}>Phantom not found</span>
           )}
         </div>
-      </aside>
-
-      <div style={css.main}>
-        <div style={css.topbar}>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            <button
-              type="button"
-              style={{ ...css.btnSecondary, width: 'auto' }}
-              onClick={function () {
-                setSidebarOpen(!sidebarOpen)
-              }}
-            >
-              Menu
+        <div style={css.row}>
+          {!wallet ? (
+            <>
+              <button type="button" style={css.btn} onClick={connectWallet}>
+                Connect Phantom
+              </button>
+              <button type="button" style={css.btnGhost} onClick={openInPhantom}>
+                Open in Phantom App
+              </button>
+            </>
+          ) : (
+            <button type="button" style={css.btnGhost} onClick={disconnectWallet}>
+              Disconnect
             </button>
-            <span style={{ ...css.badge, ...(tradingArmed && wallet ? css.badgeOk : {}) }}>
-              {tradingArmed && wallet ? 'ARMED' : 'DISARMED'}
-            </span>
-            {autoSell && <span style={{ ...css.badge, ...css.badgeAuto }}>AUTO TP/SL</span>}
-            {compoundOn && <span style={css.badge}>COMPOUND</span>}
-          </div>
+          )}
           <button
             type="button"
-            style={{ ...css.btn, ...(loading ? css.btnDisabled : {}) }}
+            style={{ ...css.btnGhost, ...(loading ? css.disabled : {}) }}
             disabled={loading}
             onClick={scan}
           >
-            {loading ? '…' : 'Scan'}
+            {loading ? 'Scanning…' : 'Scan'}
           </button>
         </div>
+      </header>
 
+      <main style={css.main}>
         <div style={css.msg}>{msg}</div>
 
-        {tab === 'dashboard' && (
+        {!wallet && (
+          <div style={css.alert}>
+            <strong>Cara connect di HP:</strong>
+            <br />
+            1. Install app <strong>Phantom</strong>
+            <br />
+            2. Tekan tombol <strong>Open in Phantom App</strong> di atas
+            <br />
+            3. Situs akan terbuka di browser dalam Phantom
+            <br />
+            4. Tekan <strong>Connect Phantom</strong> → Approve
+            <br />
+            <br />
+            Kalau buka di Chrome biasa, Phantom sering tidak terdeteksi.
+          </div>
+        )}
+
+        <div style={css.tabs}>
+          {['home', 'trade', 'positions', 'settings'].map(function (id) {
+            return (
+              <button
+                key={id}
+                type="button"
+                style={{ ...css.tab, ...(tab === id ? css.tabOn : {}) }}
+                onClick={function () {
+                  setTab(id)
+                }}
+              >
+                {id}
+              </button>
+            )
+          })}
+        </div>
+
+        {tab === 'home' && (
           <>
             <div style={css.grid}>
               <div style={css.stat}>
-                <div style={css.label}>Candidates</div>
+                <div style={css.label}>Tokens</div>
                 <div style={css.value}>{tokens.length}</div>
-              </div>
-              <div style={css.stat}>
-                <div style={css.label}>Hot</div>
-                <div style={{ ...css.value, color: '#0ecb81' }}>{hot}</div>
               </div>
               <div style={css.stat}>
                 <div style={css.label}>Open</div>
@@ -992,18 +815,12 @@ export default function Page() {
               </div>
               <div style={css.stat}>
                 <div style={css.label}>Buy size</div>
-                <div style={css.value}>{num(currentBuySol, 4)}</div>
+                <div style={css.value}>{num(buySol, 4)}</div>
               </div>
               <div style={css.stat}>
-                <div style={css.label}>Realized PnL</div>
-                <div style={{ ...css.value, color: pctColor(realizedPnlSol) }}>
-                  {num(realizedPnlSol, 4)} SOL
-                </div>
-              </div>
-              <div style={css.stat}>
-                <div style={css.label}>Unrealized</div>
-                <div style={{ ...css.value, color: pctColor(unrealized) }}>
-                  {num(unrealized, 4)} SOL
+                <div style={css.label}>Realized</div>
+                <div style={{ ...css.value, color: pctColor(realized) }}>
+                  {num(realized, 4)}
                 </div>
               </div>
             </div>
@@ -1014,7 +831,7 @@ export default function Page() {
                 <table style={css.table}>
                   <thead>
                     <tr>
-                      {['Symbol', 'Score', 'Cat', '1h', 'Liq', 'Vol', ''].map(function (h) {
+                      {['Symbol', 'Score', 'Cat', '1h', 'Liq', ''].map(function (h) {
                         return (
                           <th key={h} style={css.th}>
                             {h}
@@ -1023,227 +840,75 @@ export default function Page() {
                       })}
                     </tr>
                   </thead>
-                  <tbody>{renderRows(top)}</tbody>
+                  <tbody>
+                    {tokens.slice(0, 15).map(function (t) {
+                      const can =
+                        wallet &&
+                        armed &&
+                        !t.safety_blocked &&
+                        (t.opportunity_score || 0) >= minOpp &&
+                        busy !== 'buy'
+                      return (
+                        <tr key={t.mint}>
+                          <td style={css.td}>{t.symbol}</td>
+                          <td style={css.td}>{num(t.opportunity_score, 1)}</td>
+                          <td style={css.td}>
+                            <CategoryTag category={t.category} />
+                          </td>
+                          <td style={{ ...css.td, color: pctColor(t.price_change_1h) }}>
+                            {formatPct(t.price_change_1h)}
+                          </td>
+                          <td style={css.td}>{money(t.liquidity_usd)}</td>
+                          <td style={css.td}>
+                            <button
+                              type="button"
+                              style={{ ...css.btnSm, ...(can ? {} : css.disabled) }}
+                              disabled={!can}
+                              onClick={function () {
+                                executeBuy(t)
+                              }}
+                            >
+                              Buy
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
                 </table>
-              </div>
-            </div>
-
-            <div style={css.panel}>
-              <div style={css.panelH}>Open positions · auto TP/SL</div>
-              <div style={css.panelB}>
-                {openPos.length === 0 && (
-                  <div style={css.muted}>No open positions</div>
-                )}
-                {openPos.map(function (p) {
-                  return (
-                    <div key={p.id} style={css.card}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                        <strong>{p.symbol}</strong>
-                        <span style={{ color: pctColor(p.unrealized_pnl_pct) }}>
-                          {formatPct(p.unrealized_pnl_pct)}
-                        </span>
-                      </div>
-                      <div style={{ ...css.muted, fontSize: 10, marginTop: 4 }}>
-                        Entry {p.entry_price ? Number(p.entry_price).toPrecision(4) : '—'} · TP{' '}
-                        {p.take_profit ? Number(p.take_profit).toPrecision(4) : '—'} · SL{' '}
-                        {p.stop_loss ? Number(p.stop_loss).toPrecision(4) : '—'}
-                      </div>
-                      <button
-                        type="button"
-                        style={{ ...css.btnSell, marginTop: 6 }}
-                        disabled={busy === 'sell:' + p.id}
-                        onClick={function () {
-                          executeSell(p, 'MANUAL')
-                        }}
-                      >
-                        Sell now
-                      </button>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div style={css.panel}>
-              <div style={css.panelH}>Log</div>
-              <div style={{ ...css.panelB, ...css.logBox }}>
-                {logs.length
-                  ? logs.map(function (l, i) {
-                      return <div key={i}>{l}</div>
-                    })
-                  : '—'}
               </div>
             </div>
           </>
         )}
 
-        {tab === 'opportunities' && (
+        {tab === 'trade' && (
           <div style={css.panel}>
-            <div style={css.panelH}>All ({tokens.length})</div>
+            <div style={css.panelH}>Trade controls</div>
             <div style={css.panelB}>
-              <table style={css.table}>
-                <thead>
-                  <tr>
-                    {['Symbol', 'Score', 'Cat', '1h', 'Liq', 'Vol', ''].map(function (h) {
-                      return (
-                        <th key={h} style={css.th}>
-                          {h}
-                        </th>
-                      )
-                    })}
-                  </tr>
-                </thead>
-                <tbody>{renderRows(tokens)}</tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {tab === 'positions' && (
-          <div style={css.panel}>
-            <div style={css.panelH}>History</div>
-            <div style={css.panelB}>
-              <table style={css.table}>
-                <thead>
-                  <tr>
-                    {['Symbol', 'Status', 'PnL %', 'Reason'].map(function (h) {
-                      return (
-                        <th key={h} style={css.th}>
-                          {h}
-                        </th>
-                      )
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {positions.map(function (p) {
-                    return (
-                      <tr key={p.id}>
-                        <td style={css.td}>{p.symbol}</td>
-                        <td style={css.td}>{p.status}</td>
-                        <td
-                          style={{
-                            ...css.td,
-                            color: pctColor(p.pnl_pct != null ? p.pnl_pct : p.unrealized_pnl_pct),
-                          }}
-                        >
-                          {formatPct(p.pnl_pct != null ? p.pnl_pct : p.unrealized_pnl_pct)}
-                        </td>
-                        <td style={css.td}>{p.close_reason || '—'}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {tab === 'compound' && (
-          <div style={css.panel}>
-            <div style={css.panelH}>Compounding profit</div>
-            <div style={{ ...css.panelB, padding: 12 }}>
-              <p style={{ ...css.muted, fontSize: 12, lineHeight: 1.5, marginBottom: 10 }}>
-                Setelah sell profit, sebagian PnL (SOL) otomatis ditambahkan ke size buy
-                berikutnya. Kerugian tidak menambah size.
-              </p>
+              {!wallet && (
+                <div style={{ marginBottom: 12 }}>
+                  <button type="button" style={css.btn} onClick={connectWallet}>
+                    Connect Phantom
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...css.btnGhost, marginLeft: 8 }}
+                    onClick={openInPhantom}
+                  >
+                    Open in Phantom App
+                  </button>
+                </div>
+              )}
               <div style={css.formGrid}>
                 <div>
-                  <div style={css.label}>Base buy (SOL)</div>
+                  <div style={css.label}>Buy size (SOL)</div>
                   <input
                     style={css.input}
                     type="number"
                     step="0.001"
-                    value={baseBuySol}
+                    value={buySol}
                     onChange={function (e) {
-                      const v = parseFloat(e.target.value) || 0
-                      setBaseBuySol(v)
-                      setCurrentBuySol(v)
-                    }}
-                  />
-                </div>
-                <div>
-                  <div style={css.label}>Current buy size (SOL)</div>
-                  <input
-                    style={css.input}
-                    type="number"
-                    step="0.001"
-                    value={currentBuySol}
-                    onChange={function (e) {
-                      setCurrentBuySol(parseFloat(e.target.value) || 0)
-                    }}
-                  />
-                </div>
-                <div>
-                  <div style={css.label}>Compound % of profit</div>
-                  <input
-                    style={css.input}
-                    type="number"
-                    value={compoundPct}
-                    onChange={function (e) {
-                      setCompoundPct(parseFloat(e.target.value) || 0)
-                    }}
-                  />
-                </div>
-                <div>
-                  <div style={css.label}>Realized PnL (SOL)</div>
-                  <div style={{ ...css.value, color: pctColor(realizedPnlSol) }}>
-                    {num(realizedPnlSol, 4)}
-                  </div>
-                </div>
-              </div>
-              <label style={{ display: 'flex', gap: 8, marginTop: 12, fontSize: 12 }}>
-                <input
-                  type="checkbox"
-                  checked={compoundOn}
-                  onChange={function (e) {
-                    setCompoundOn(e.target.checked)
-                  }}
-                />
-                Enable compounding
-              </label>
-              <button
-                type="button"
-                style={{ ...css.btnSecondary, width: 'auto', marginTop: 10 }}
-                onClick={function () {
-                  setCurrentBuySol(baseBuySol)
-                  pushLog('Buy size reset to base')
-                }}
-              >
-                Reset size to base
-              </button>
-            </div>
-          </div>
-        )}
-
-        {tab === 'autopilot' && (
-          <div style={css.panel}>
-            <div style={css.panelH}>Auto-Pilot (approve only)</div>
-            <div style={{ ...css.panelB, padding: 12 }}>
-              <p style={{ ...css.muted, fontSize: 12, lineHeight: 1.5 }}>
-                Buy/Sell tetap perlu approve di Phantom HP. Sistem yang menyiapkan transaksi
-                otomatis saat sinyal / TP / SL.
-              </p>
-              <div style={css.formGrid}>
-                <div>
-                  <div style={css.label}>Min score</div>
-                  <input
-                    style={css.input}
-                    type="number"
-                    value={minOpp}
-                    onChange={function (e) {
-                      setMinOpp(parseFloat(e.target.value) || 0)
-                    }}
-                  />
-                </div>
-                <div>
-                  <div style={css.label}>Max open</div>
-                  <input
-                    style={css.input}
-                    type="number"
-                    value={maxOpen}
-                    onChange={function (e) {
-                      setMaxOpen(parseInt(e.target.value, 10) || 1)
+                      setBuySol(parseFloat(e.target.value) || 0)
                     }}
                   />
                 </div>
@@ -1270,126 +935,126 @@ export default function Page() {
                   />
                 </div>
                 <div>
-                  <div style={css.label}>Slippage bps</div>
+                  <div style={css.label}>Min score</div>
                   <input
                     style={css.input}
                     type="number"
-                    value={slippageBps}
+                    value={minOpp}
                     onChange={function (e) {
-                      setSlippageBps(parseInt(e.target.value, 10) || 100)
-                    }}
-                  />
-                </div>
-                <div>
-                  <div style={css.label}>Scan interval sec</div>
-                  <input
-                    style={css.input}
-                    type="number"
-                    value={scanSec}
-                    onChange={function (e) {
-                      setScanSec(parseInt(e.target.value, 10) || 40)
+                      setMinOpp(parseFloat(e.target.value) || 0)
                     }}
                   />
                 </div>
               </div>
-              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <label style={{ fontSize: 12, display: 'flex', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={tradingArmed}
-                    onChange={function (e) {
-                      setTradingArmed(e.target.checked)
-                      if (!e.target.checked) setAutoBuySignal(false)
-                    }}
-                  />
-                  Arm trading
-                </label>
-                <label style={{ fontSize: 12, display: 'flex', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={autoSell}
-                    onChange={function (e) {
-                      setAutoSell(e.target.checked)
-                    }}
-                  />
-                  Auto TP/SL sell prompt
-                </label>
-                <label style={{ fontSize: 12, display: 'flex', gap: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={autoBuySignal}
-                    onChange={function (e) {
-                      if (e.target.checked && (!tradingArmed || !wallet)) {
-                        setMsg('Connect + Arm dulu')
-                        return
-                      }
-                      setAutoBuySignal(e.target.checked)
-                    }}
-                  />
-                  Auto buy signal (masih approve Phantom)
-                </label>
-              </div>
+              <label style={{ display: 'flex', gap: 8, marginTop: 12, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={armed}
+                  onChange={function (e) {
+                    setArmed(e.target.checked)
+                  }}
+                />
+                Arm trading (wajib sebelum Buy)
+              </label>
+              <label style={{ display: 'flex', gap: 8, marginTop: 8, fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={autoTpsl}
+                  onChange={function (e) {
+                    setAutoTpsl(e.target.checked)
+                  }}
+                />
+                Auto TP/SL (minta approve sell)
+              </label>
+              <p style={{ ...css.muted, marginTop: 10 }}>
+                Setelah Connect + Arm, tombol Buy di Home aktif. Phantom akan minta
+                approve setiap transaksi.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {tab === 'positions' && (
+          <div style={css.panel}>
+            <div style={css.panelH}>Positions</div>
+            <div style={css.panelB}>
+              {openPos.length === 0 && <div style={css.muted}>No open positions</div>}
+              {openPos.map(function (p) {
+                return (
+                  <div key={p.id} style={css.card}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <strong>{p.symbol}</strong>
+                      <span style={{ color: pctColor(p.unrealized_pnl_pct) }}>
+                        {formatPct(p.unrealized_pnl_pct)}
+                      </span>
+                    </div>
+                    <div style={{ ...css.muted, marginTop: 4 }}>
+                      Entry {p.entry_price ? Number(p.entry_price).toPrecision(4) : '—'} ·
+                      size {p.amount_sol} SOL
+                    </div>
+                    <button
+                      type="button"
+                      style={{ ...css.btnSell, marginTop: 8 }}
+                      onClick={function () {
+                        executeSell(p, 'MANUAL')
+                      }}
+                    >
+                      Sell
+                    </button>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )}
 
         {tab === 'settings' && (
           <div style={css.panel}>
-            <div style={css.panelH}>Filters</div>
-            <div style={{ ...css.panelB, padding: 12 }}>
-              <div style={css.formGrid}>
-                <div>
-                  <div style={css.label}>Min liq</div>
-                  <input
-                    style={css.input}
-                    type="number"
-                    value={minLiq}
-                    onChange={function (e) {
-                      setMinLiq(parseFloat(e.target.value) || 0)
-                    }}
-                  />
-                </div>
-                <div>
-                  <div style={css.label}>Min vol</div>
-                  <input
-                    style={css.input}
-                    type="number"
-                    value={minVol}
-                    onChange={function (e) {
-                      setMinVol(parseFloat(e.target.value) || 0)
-                    }}
-                  />
-                </div>
-                <div>
-                  <div style={css.label}>Max liq</div>
-                  <input
-                    style={css.input}
-                    type="number"
-                    value={maxLiq}
-                    onChange={function (e) {
-                      setMaxLiq(parseFloat(e.target.value) || 0)
-                    }}
-                  />
-                </div>
-              </div>
-              <label style={{ display: 'flex', gap: 8, marginTop: 10, fontSize: 12 }}>
+            <div style={css.panelH}>Compound & notes</div>
+            <div style={css.panelB}>
+              <label style={{ display: 'flex', gap: 8, fontSize: 13 }}>
                 <input
                   type="checkbox"
-                  checked={onlyPump}
+                  checked={compoundOn}
                   onChange={function (e) {
-                    setOnlyPump(e.target.checked)
+                    setCompoundOn(e.target.checked)
                   }}
                 />
-                Only pump.fun mints
+                Compound profit ke buy size
               </label>
+              <div style={{ marginTop: 8 }}>
+                <div style={css.label}>Compound % of profit</div>
+                <input
+                  style={css.input}
+                  type="number"
+                  value={compoundPct}
+                  onChange={function (e) {
+                    setCompoundPct(parseFloat(e.target.value) || 0)
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                style={{ ...css.btnGhost, marginTop: 10 }}
+                onClick={function () {
+                  setBuySol(baseBuy)
+                }}
+              >
+                Reset buy size
+              </button>
+              <p style={{ ...css.muted, marginTop: 12 }}>
+                Untuk sign swap stabil: npm install @solana/web3.js lalu expose
+                VersionedTransaction ke window.solanaWeb3.
+              </p>
+              <div style={{ marginTop: 10, fontFamily: 'monospace', fontSize: 10, color: '#848e9c' }}>
+                {logs.slice(0, 15).map(function (l, i) {
+                  return <div key={i}>{l}</div>
+                })}
+              </div>
             </div>
           </div>
         )}
-
-        <div style={css.footer}>
-          v6 · Approve-only · Auto TP/SL prompt · Compound · Not financial advice
-        </div>
-      </div>
+      </main>
     </div>
   )
 }
