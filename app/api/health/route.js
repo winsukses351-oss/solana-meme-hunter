@@ -1,14 +1,76 @@
 import { NextResponse } from "next/server";
-import { checkDatabaseHealth } from "@/lib/db";
+import { Pool } from "pg";
 
-/**
- * GET /api/health
- *
- * Real health check — never fakes status.
- * - backend always "connected" if this route is reachable
- * - database is checked for real
- * - trading engine is always BLOCKED in Phase 2
- */
+let pool = null;
+
+function getPool() {
+  if (pool) return pool;
+
+  const connectionString = process.env.DATABASE_URL;
+
+  if (!connectionString || connectionString.trim() === "") {
+    return null;
+  }
+
+  try {
+    pool = new Pool({
+      connectionString,
+      max: 5,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 5000,
+      ssl:
+        process.env.NODE_ENV === "production"
+          ? { rejectUnauthorized: false }
+          : undefined,
+    });
+
+    pool.on("error", (err) => {
+      console.error("[db] Unexpected pool error:", err.message);
+    });
+
+    return pool;
+  } catch (err) {
+    console.error("[db] Failed to create pool:", err.message);
+    return null;
+  }
+}
+
+async function checkDatabaseHealth() {
+  const connectionString = process.env.DATABASE_URL;
+
+  if (!connectionString || connectionString.trim() === "") {
+    return {
+      status: "NOT_CONFIGURED",
+      message: "DATABASE_URL environment variable is not set",
+    };
+  }
+
+  const p = getPool();
+  if (!p) {
+    return {
+      status: "ERROR",
+      message: "Failed to initialize database pool",
+    };
+  }
+
+  let client;
+  try {
+    client = await p.connect();
+    await client.query("SELECT 1 AS ok");
+    return {
+      status: "CONNECTED",
+      message: "PostgreSQL connection successful",
+    };
+  } catch (err) {
+    return {
+      status: "ERROR",
+      message: err.message || "Database connection failed",
+    };
+  } finally {
+    if (client) client.release();
+  }
+}
+
 export async function GET() {
   try {
     const dbHealth = await checkDatabaseHealth();
@@ -19,7 +81,7 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       backend: "connected",
       database: {
-        status: dbHealth.status, // CONNECTED | NOT_CONFIGURED | ERROR
+        status: dbHealth.status,
         message: dbHealth.message,
       },
       trading_engine: {
