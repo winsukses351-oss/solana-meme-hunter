@@ -16,6 +16,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [backendStatus, setBackendStatus] = useState("CHECKING");
   const [dbStatus, setDbStatus] = useState("CHECKING");
+  const [solanaRpcData, setSolanaRpcData] = useState(null);
 
   useEffect(() => {
     async function fetchHealth() {
@@ -35,8 +36,31 @@ export default function Dashboard() {
       }
     }
 
+    async function fetchSolanaHealth() {
+      try {
+        const res = await fetch("/api/solana/health");
+        const data = await res.json();
+        setSolanaRpcData(data);
+      } catch {
+        setSolanaRpcData({
+          connected: false,
+          status: "ERROR",
+          network: null,
+          slot: null,
+          blockHeight: null,
+          latencyMs: null,
+        });
+      }
+    }
+
     fetchHealth();
-    const interval = setInterval(fetchHealth, 10000);
+    fetchSolanaHealth();
+
+    const interval = setInterval(() => {
+      fetchHealth();
+      fetchSolanaHealth();
+    }, 12000); // 12-second safe interval to preserve RPC quota
+
     return () => clearInterval(interval);
   }, []);
 
@@ -57,7 +81,11 @@ export default function Dashboard() {
             <SmartMoneyWhales />
             <OpenPositionsTable />
             <TradeHistoryTable />
-            <SystemStatus backendStatus={backendStatus} dbStatus={dbStatus} />
+            <SystemStatus
+              backendStatus={backendStatus}
+              dbStatus={dbStatus}
+              solanaRpcData={solanaRpcData}
+            />
           </>
         )}
 
@@ -83,20 +111,28 @@ export default function Dashboard() {
         {activeTab === "risk" && (
           <div className="space-y-4">
             <AccountMetrics />
-            <SystemStatus backendStatus={backendStatus} dbStatus={dbStatus} />
+            <SystemStatus
+              backendStatus={backendStatus}
+              dbStatus={dbStatus}
+              solanaRpcData={solanaRpcData}
+            />
           </div>
         )}
 
         {activeTab === "settings" && (
           <div className="space-y-4">
-            <SystemStatus backendStatus={backendStatus} dbStatus={dbStatus} />
+            <SystemStatus
+              backendStatus={backendStatus}
+              dbStatus={dbStatus}
+              solanaRpcData={solanaRpcData}
+            />
           </div>
         )}
       </main>
 
       {/* Terminal Footer */}
       <footer className="border-t border-slate-800/80 py-3 text-center text-[11px] font-mono text-slate-500 bg-[#0b0e14]">
-        SOLANA AI TRADER — Phase 2 Foundation & API | System State: BLOCKED
+        SOLANA AI TRADER — Phase 3 Mainnet RPC Integration | System State: BLOCKED
       </footer>
     </div>
   );
