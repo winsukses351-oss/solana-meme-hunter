@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { checkDatabaseHealth } from "../../../lib/db";
+import { checkDatabaseHealth } from "@/lib/db";
 
 /**
  * GET /api/health
@@ -24,7 +24,8 @@ export async function GET() {
       },
       trading_engine: {
         status: "BLOCKED",
-        reason: "Live trading is disabled in Phase 2. Trading engine not implemented yet.",
+        reason:
+          "Live trading is disabled in Phase 2. Trading engine not implemented yet.",
       },
       providers: {
         birdeye: "NOT_CONNECTED",
@@ -35,11 +36,8 @@ export async function GET() {
       system_status: "BLOCKED",
     };
 
-    // HTTP status still 200 so the frontend can read the body.
-    // Real status is inside the JSON.
     return NextResponse.json(response, { status: 200 });
   } catch (err) {
-    // Even on unexpected error we still return a clear payload
     return NextResponse.json(
       {
         status: "error",
