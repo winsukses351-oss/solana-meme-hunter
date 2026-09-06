@@ -1,19 +1,44 @@
 "use client";
 
-import { useState } from "react";
-import Navigation from "@/components/Navigation";
-import AccountMetrics from "@/components/AccountMetrics";
-import LiveScanner from "@/components/LiveScanner";
-import SmartMoneyWhales from "@/components/SmartMoneyWhales";
+import { useState, useEffect } from "react";
+import Navigation from "../components/Navigation";
+import AccountMetrics from "../components/AccountMetrics";
+import LiveScanner from "../components/LiveScanner";
+import SmartMoneyWhales from "../components/SmartMoneyWhales";
 import {
   TopOpportunitiesTable,
   OpenPositionsTable,
   TradeHistoryTable,
-} from "@/components/Tables";
-import SystemStatus from "@/components/SystemStatus";
+} from "../components/Tables";
+import SystemStatus from "../components/SystemStatus";
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [backendStatus, setBackendStatus] = useState("CHECKING");
+  const [dbStatus, setDbStatus] = useState("CHECKING");
+
+  useEffect(() => {
+    async function fetchHealth() {
+      try {
+        const res = await fetch("/api/health");
+        if (res.ok) {
+          const data = await res.json();
+          setBackendStatus(data.backend || "error");
+          setDbStatus(data.database || "error");
+        } else {
+          setBackendStatus("error");
+          setDbStatus("error");
+        }
+      } catch {
+        setBackendStatus("error");
+        setDbStatus("error");
+      }
+    }
+
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0b0e14]">
@@ -32,7 +57,7 @@ export default function Dashboard() {
             <SmartMoneyWhales />
             <OpenPositionsTable />
             <TradeHistoryTable />
-            <SystemStatus />
+            <SystemStatus backendStatus={backendStatus} dbStatus={dbStatus} />
           </>
         )}
 
@@ -58,20 +83,20 @@ export default function Dashboard() {
         {activeTab === "risk" && (
           <div className="space-y-4">
             <AccountMetrics />
-            <SystemStatus />
+            <SystemStatus backendStatus={backendStatus} dbStatus={dbStatus} />
           </div>
         )}
 
         {activeTab === "settings" && (
           <div className="space-y-4">
-            <SystemStatus />
+            <SystemStatus backendStatus={backendStatus} dbStatus={dbStatus} />
           </div>
         )}
       </main>
 
       {/* Terminal Footer */}
       <footer className="border-t border-slate-800/80 py-3 text-center text-[11px] font-mono text-slate-500 bg-[#0b0e14]">
-        SOLANA AI TRADER — Phase 1 Foundation UI | System State: BLOCKED
+        SOLANA AI TRADER — Phase 2 Foundation & API | System State: BLOCKED
       </footer>
     </div>
   );
