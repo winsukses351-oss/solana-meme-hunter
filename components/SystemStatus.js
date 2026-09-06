@@ -2,32 +2,42 @@
 
 import { useState, useEffect } from "react";
 
-export default function SystemStatus() {
+export default function SystemStatus({ backendStatus = "CHECKING", dbStatus = "CHECKING" }) {
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
-    // Only real frontend initialization logs
     const now = new Date().toISOString().split("T")[1].slice(0, 8);
-    setLogs([
+    const initialLogs = [
       `[${now}] INFO: Frontend initialized`,
-      `[${now}] INFO: Phase 1 dashboard loaded`,
-    ]);
-  }, []);
+      `[${now}] INFO: Phase 1 & 2 dashboard loaded`,
+      `[${now}] BACKEND: API status -> ${backendStatus}`,
+      `[${now}] DATABASE: Connection status -> ${dbStatus}`,
+    ];
+    setLogs(initialLogs);
+  }, [backendStatus, dbStatus]);
+
+  // Dynamic mapping based on real server-side checks
+  const getDbDisplayStatus = () => {
+    if (dbStatus === "connected") return "CONNECTED";
+    if (dbStatus === "not_configured") return "NOT CONFIGURED";
+    if (dbStatus === "error") return "ERROR";
+    return "CHECKING...";
+  };
 
   const systemHealth = [
-    "DATABASE NOT CONNECTED",
-    "SOLANA RPC NOT CONNECTED",
-    "MARKET DATA NOT CONNECTED",
-    "WALLET / SIGNER NOT CONNECTED",
-    "EXECUTION PROVIDER NOT CONNECTED",
-    "SAFETY ENGINE NOT CONNECTED",
-    "RISK ENGINE NOT CONNECTED",
-    "DECISION ENGINE NOT CONNECTED",
-    "POSITION MONITOR NOT CONNECTED",
-    "CONFIRMATION NOT CONNECTED",
-    "RECONCILIATION NOT CONNECTED",
-    "DUPLICATE PROTECTION NOT CONNECTED",
-    "BACKGROUND WORKERS NOT CONNECTED",
+    { label: "DATABASE", status: getDbDisplayStatus() },
+    { label: "SOLANA RPC", status: "NOT CONNECTED" },
+    { label: "MARKET DATA", status: "NOT CONNECTED" },
+    { label: "WALLET / SIGNER", status: "NOT CONNECTED" },
+    { label: "EXECUTION PROVIDER", status: "NOT CONNECTED" },
+    { label: "SAFETY ENGINE", status: "NOT CONNECTED" },
+    { label: "RISK ENGINE", status: "NOT CONNECTED" },
+    { label: "DECISION ENGINE", status: "NOT CONNECTED" },
+    { label: "POSITION MONITOR", status: "NOT CONNECTED" },
+    { label: "CONFIRMATION", status: "NOT CONNECTED" },
+    { label: "RECONCILIATION", status: "NOT CONNECTED" },
+    { label: "DUPLICATE PROTECTION", status: "NOT CONNECTED" },
+    { label: "BACKGROUND WORKERS", status: "NOT CONNECTED" },
   ];
 
   const apiHealth = [
@@ -35,8 +45,14 @@ export default function SystemStatus() {
     { provider: "DexScreener", status: "NOT CONNECTED" },
     { provider: "Jupiter", status: "NOT CONNECTED" },
     { provider: "Solana RPC", status: "NOT CONNECTED" },
-    { provider: "PostgreSQL", status: "NOT CONNECTED" },
-    { provider: "Backend API", status: "NOT CONNECTED" },
+    {
+      provider: "PostgreSQL",
+      status: getDbDisplayStatus(),
+    },
+    {
+      provider: "Backend API",
+      status: backendStatus === "connected" ? "CONNECTED" : "ERROR",
+    },
   ];
 
   return (
@@ -55,10 +71,10 @@ export default function SystemStatus() {
               </span>
             </div>
             <div className="text-sm font-mono font-bold text-slate-200 mt-1">
-              Reason: Live trading is not available in Phase 1.
+              Reason: Backend/database foundation only. Live trading is not implemented in Phase 2.
             </div>
             <p className="text-xs font-mono text-slate-400 mt-1">
-              Current state: BLOCKED — Foundation UI only
+              Current state: BLOCKED — Foundation & API Only
             </p>
           </div>
         </section>
@@ -97,8 +113,18 @@ export default function SystemStatus() {
                 key={idx}
                 className="flex items-center justify-between bg-[#0b0e14] px-2.5 py-1.5 rounded border border-slate-800/50 text-[11px] font-mono"
               >
-                <span className="text-slate-400">{item.split(" ")[0]} ...</span>
-                <span className="text-red-400/80 font-semibold">NOT CONNECTED</span>
+                <span className="text-slate-400">{item.label} ...</span>
+                <span
+                  className={`font-semibold ${
+                    item.status === "CONNECTED"
+                      ? "text-emerald-400"
+                      : item.status === "NOT CONFIGURED"
+                      ? "text-amber-400"
+                      : "text-red-400/80"
+                  }`}
+                >
+                  {item.status}
+                </span>
               </div>
             ))}
           </div>
@@ -116,7 +142,17 @@ export default function SystemStatus() {
                 className="flex items-center justify-between bg-[#0b0e14] px-3 py-2 rounded border border-slate-800/60 text-xs font-mono"
               >
                 <span className="text-slate-300 font-medium">{api.provider}</span>
-                <span className="text-red-400/80 text-[11px]">{api.status}</span>
+                <span
+                  className={`text-[11px] font-semibold ${
+                    api.status === "CONNECTED"
+                      ? "text-emerald-400"
+                      : api.status === "NOT CONFIGURED"
+                      ? "text-amber-400"
+                      : "text-red-400/80"
+                  }`}
+                >
+                  {api.status}
+                </span>
               </div>
             ))}
           </div>
