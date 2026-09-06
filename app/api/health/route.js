@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { Pool } from "pg";
+import { checkSolanaHealth } from "../../../lib/solana";
 
+// ---------- Database helpers (Phase 2) ----------
 let pool = null;
 
 function getPool() {
@@ -71,29 +73,43 @@ async function checkDatabaseHealth() {
   }
 }
 
+// ---------- Main Health Endpoint ----------
 export async function GET() {
   try {
-    const dbHealth = await checkDatabaseHealth();
+    const [dbHealth, solanaHealth] = await Promise.all([
+      checkDatabaseHealth(),
+      checkSolanaHealth(),
+    ]);
 
     const response = {
       status: "ok",
-      phase: "2",
+      phase: "3",
       timestamp: new Date().toISOString(),
       backend: "connected",
       database: {
         status: dbHealth.status,
         message: dbHealth.message,
       },
+      solana_rpc: {
+        status: solanaHealth.status,
+        connected: solanaHealth.connected,
+        slot: solanaHealth.slot,
+        blockHeight: solanaHealth.blockHeight,
+        network: solanaHealth.network,
+        latencyMs: solanaHealth.latencyMs,
+        message: solanaHealth.message,
+        checkedAt: solanaHealth.checkedAt,
+      },
       trading_engine: {
         status: "BLOCKED",
         reason:
-          "Live trading is disabled in Phase 2. Trading engine not implemented yet.",
+          "Live trading is disabled. Trading engine not implemented yet.",
       },
       providers: {
         birdeye: "NOT_CONNECTED",
         dexscreener: "NOT_CONNECTED",
         jupiter: "NOT_CONNECTED",
-        solana_rpc: "NOT_CONNECTED",
+        solana_rpc: solanaHealth.status,
       },
       system_status: "BLOCKED",
     };
@@ -103,22 +119,32 @@ export async function GET() {
     return NextResponse.json(
       {
         status: "error",
-        phase: "2",
+        phase: "3",
         timestamp: new Date().toISOString(),
         backend: "connected",
         database: {
           status: "ERROR",
           message: err.message || "Unexpected health check failure",
         },
+        solana_rpc: {
+          status: "ERROR",
+          connected: false,
+          slot: null,
+          blockHeight: null,
+          network: null,
+          latencyMs: null,
+          message: err.message || "Unexpected failure",
+          checkedAt: new Date().toISOString(),
+        },
         trading_engine: {
           status: "BLOCKED",
-          reason: "Live trading is disabled in Phase 2",
+          reason: "Live trading is disabled",
         },
         providers: {
           birdeye: "NOT_CONNECTED",
           dexscreener: "NOT_CONNECTED",
           jupiter: "NOT_CONNECTED",
-          solana_rpc: "NOT_CONNECTED",
+          solana_rpc: "ERROR",
         },
         system_status: "ERROR",
       },
