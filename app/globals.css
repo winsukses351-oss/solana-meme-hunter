@@ -7,7 +7,6 @@ body {
   height: 100%;
 }
 
-/* Prevent horizontal overflow on very small screens */
 body {
   overflow-x: hidden;
 }
