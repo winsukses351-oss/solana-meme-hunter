@@ -3,12 +3,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 /**
- * Solana AI Meme Coin Hunter — app/page.jsx
- * Scanner (DexScreener) + optional wallet trading via Phantom (no private keys in code).
- * NEVER paste a private key into this file or into any input on this page.
+ * Solana AI Meme Coin Hunter v2 — app/page.jsx
+ * Better meme filters, scoring, UI, wallet buy via Phantom (no private keys).
  */
 
 const SOL_MINT = 'So11111111111111111111111111111111111111112'
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB'
+const BLOCKED_MINTS = new Set([SOL_MINT, USDC_MINT, USDT_MINT])
+const BLOCKED_SYMBOLS = new Set(['SOL', 'WSOL', 'USDC', 'USDT', 'BTC', 'ETH', 'WBTC', 'WETH'])
+
 const JUPITER_QUOTE = 'https://quote-api.jup.ag/v6/quote'
 const JUPITER_SWAP = 'https://quote-api.jup.ag/v6/swap'
 
@@ -18,64 +22,65 @@ const styles = {
     background: '#0b0e11',
     color: '#eaecef',
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-    padding: '0 0 40px',
+    padding: '0 0 48px',
   },
   header: {
     display: 'flex',
     flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    padding: '14px 18px',
+    gap: 10,
+    padding: '12px 14px',
     background: '#12161c',
     borderBottom: '1px solid #1e2329',
     position: 'sticky',
     top: 0,
-    zIndex: 20,
+    zIndex: 30,
   },
-  title: { fontSize: '1.05rem', fontWeight: 650, margin: 0 },
+  title: { fontSize: '1rem', fontWeight: 700, margin: 0 },
   badge: {
-    fontSize: 12,
-    padding: '4px 10px',
+    fontSize: 11,
+    padding: '3px 8px',
     borderRadius: 6,
     background: '#2b2f36',
     color: '#848e9c',
+    fontWeight: 600,
   },
   badgeWarn: { background: 'rgba(240,185,11,0.15)', color: '#f0b90b' },
   badgeOk: { background: 'rgba(14,203,129,0.15)', color: '#0ecb81' },
-  nav: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+  nav: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' },
   navBtn: {
     background: 'transparent',
     border: '1px solid #1e2329',
     color: '#848e9c',
-    padding: '6px 12px',
+    padding: '6px 10px',
     borderRadius: 6,
     cursor: 'pointer',
-    fontSize: 13,
+    fontSize: 12,
   },
-  navActive: { borderColor: '#f0b90b', color: '#eaecef' },
-  main: { padding: 16, maxWidth: 1200, margin: '0 auto' },
-  msg: { color: '#f0b90b', fontSize: 13, marginBottom: 10, minHeight: 18 },
+  navActive: { borderColor: '#f0b90b', color: '#eaecef', background: 'rgba(240,185,11,0.08)' },
+  main: { padding: 12, maxWidth: 1100, margin: '0 auto' },
+  msg: { color: '#f0b90b', fontSize: 12, marginBottom: 10, minHeight: 16 },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-    gap: 12,
-    marginBottom: 16,
+    gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+    gap: 8,
+    marginBottom: 12,
   },
   stat: {
     background: '#12161c',
     border: '1px solid #1e2329',
     borderRadius: 8,
-    padding: 14,
+    padding: 12,
   },
-  label: { fontSize: 12, color: '#848e9c', marginBottom: 4 },
-  value: { fontSize: '1.15rem', fontWeight: 650 },
+  label: { fontSize: 11, color: '#848e9c', marginBottom: 4 },
+  value: { fontSize: '1.05rem', fontWeight: 700 },
   panel: {
     background: '#12161c',
     border: '1px solid #1e2329',
     borderRadius: 8,
     overflow: 'hidden',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   panelH: {
     display: 'flex',
@@ -83,13 +88,13 @@ const styles = {
     alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap',
-    padding: '12px 16px',
+    padding: '10px 12px',
     borderBottom: '1px solid #1e2329',
-    fontWeight: 600,
-    fontSize: 14,
+    fontWeight: 650,
+    fontSize: 13,
   },
-  panelB: { padding: 12, overflowX: 'auto' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: 13 },
+  panelB: { padding: 8, overflowX: 'auto' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: 12 },
   th: {
     textAlign: 'left',
     color: '#848e9c',
@@ -99,47 +104,48 @@ const styles = {
     whiteSpace: 'nowrap',
   },
   td: {
-    padding: '10px 6px',
+    padding: '9px 6px',
     borderBottom: '1px solid #1e2329',
     whiteSpace: 'nowrap',
+    verticalAlign: 'middle',
   },
   btn: {
     background: '#f0b90b',
     color: '#000',
     border: 'none',
-    padding: '8px 14px',
+    padding: '7px 12px',
     borderRadius: 6,
-    fontWeight: 650,
+    fontWeight: 700,
     cursor: 'pointer',
-    fontSize: 13,
+    fontSize: 12,
+  },
+  btnSm: {
+    background: '#f0b90b',
+    color: '#000',
+    border: 'none',
+    padding: '4px 8px',
+    borderRadius: 5,
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontSize: 11,
   },
   btnSecondary: {
     background: '#2b2f36',
     color: '#eaecef',
     border: 'none',
-    padding: '8px 14px',
+    padding: '7px 12px',
     borderRadius: 6,
     fontWeight: 650,
     cursor: 'pointer',
-    fontSize: 13,
+    fontSize: 12,
   },
-  btnDanger: {
-    background: '#f6465d',
-    color: '#fff',
-    border: 'none',
-    padding: '8px 14px',
-    borderRadius: 6,
-    fontWeight: 650,
-    cursor: 'pointer',
-    fontSize: 13,
-  },
-  btnDisabled: { opacity: 0.5, cursor: 'not-allowed' },
+  btnDisabled: { opacity: 0.45, cursor: 'not-allowed' },
   tag: {
     display: 'inline-block',
-    padding: '2px 8px',
+    padding: '2px 7px',
     borderRadius: 4,
-    fontSize: 11,
-    fontWeight: 650,
+    fontSize: 10,
+    fontWeight: 700,
   },
   tagElite: { background: 'rgba(240,185,11,0.2)', color: '#f0b90b' },
   tagHigh: { background: 'rgba(14,203,129,0.15)', color: '#0ecb81' },
@@ -148,8 +154,8 @@ const styles = {
   muted: { color: '#848e9c' },
   formGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-    gap: 12,
+    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+    gap: 10,
   },
   input: {
     width: '100%',
@@ -158,19 +164,24 @@ const styles = {
     color: '#eaecef',
     padding: '8px 10px',
     borderRadius: 6,
-    fontSize: 14,
+    fontSize: 13,
   },
-  footer: {
-    textAlign: 'center',
-    color: '#848e9c',
-    fontSize: 12,
-    padding: 16,
+  footer: { textAlign: 'center', color: '#848e9c', fontSize: 11, padding: 16 },
+  pos: { color: '#0ecb81' },
+  neg: { color: '#f6465d' },
+  cardList: { display: 'grid', gap: 8 },
+  card: {
+    background: '#0b0e11',
+    border: '1px solid #1e2329',
+    borderRadius: 8,
+    padding: 12,
   },
-  rowActions: { display: 'flex', gap: 6 },
 }
 
 function money(n, d = 0) {
   if (n == null || Number.isNaN(n)) return '—'
+  if (Math.abs(n) >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'M'
+  if (Math.abs(n) >= 1e3) return '$' + (n / 1e3).toFixed(1) + 'K'
   return '$' + Number(n).toLocaleString(undefined, { maximumFractionDigits: d })
 }
 
@@ -184,6 +195,11 @@ function shortAddr(a) {
   return a.slice(0, 4) + '…' + a.slice(-4)
 }
 
+function pctColor(v) {
+  if (v == null) return styles.muted
+  return v >= 0 ? styles.pos : styles.neg
+}
+
 function CategoryTag({ category }) {
   const c = (category || 'AVOID').toUpperCase()
   let s = styles.tagAvoid
@@ -193,74 +209,113 @@ function CategoryTag({ category }) {
   return <span style={{ ...styles.tag, ...s }}>{c}</span>
 }
 
+function isMemeCandidate(n) {
+  if (!n.mint || BLOCKED_MINTS.has(n.mint)) return false
+  const sym = (n.symbol || '').toUpperCase()
+  if (BLOCKED_SYMBOLS.has(sym)) return false
+  const name = (n.name || '').toLowerCase()
+  if (name === 'solana' || name === 'wrapped sol') return false
+  // Prefer smaller caps / meme range liquidity
+  const liq = n.liquidity_usd || 0
+  if (liq > 5_000_000) return false // too large, likely major
+  if (liq < 2000 && (n.volume_24h || 0) < 300) return false
+  return true
+}
+
 function safetyScore(t) {
   let score = 100
   const reasons = []
   let blocked = false
   const liq = t.liquidity_usd
   if (liq == null) {
-    score -= 15
-    reasons.push('Liquidity data unavailable')
-  } else if (liq < 10000) {
-    score -= 40
-    reasons.push(`Low liquidity: $${liq.toFixed(0)}`)
-    if (liq < 3000) {
+    score -= 20
+    reasons.push('Liquidity unknown')
+  } else if (liq < 5000) {
+    score -= 35
+    reasons.push(`Low liquidity ${money(liq)}`)
+    if (liq < 1500) {
       blocked = true
-      reasons.push('BLOCK: Liquidity critically low')
+      reasons.push('BLOCK: critical liquidity')
     }
+  } else if (liq >= 20000 && liq <= 500000) {
+    score += 5
   }
-  if (t.price_change_5m != null && Math.abs(t.price_change_5m) > 80) {
+  if (t.price_change_5m != null && Math.abs(t.price_change_5m) > 90) {
+    score -= 20
+    reasons.push('Extreme 5m volatility')
+  }
+  if (t.buy_sell_ratio != null && t.buy_sell_ratio < 0.5) {
     score -= 15
-    reasons.push('Extreme short-term move')
+    reasons.push('Heavy sell pressure')
   }
   score = Math.max(0, Math.min(100, score))
-  if (score < 40) blocked = true
+  if (score < 35) blocked = true
   return { score, blocked, reasons }
 }
 
 function momentumScore(t) {
-  let score = 50
+  let score = 45
   const reasons = []
   const pc5 = t.price_change_5m
   const pc1 = t.price_change_1h
+  const pc24 = t.price_change_24h
   if (pc5 != null) {
-    if (pc5 >= 5 && pc5 <= 40) {
-      score += 12
-      reasons.push(`Healthy 5m +${pc5.toFixed(1)}%`)
-    } else if (pc5 > 40) {
-      score += 5
-      reasons.push('Strong 5m — possible overextension')
-    } else if (pc5 < -15) {
-      score -= 15
-      reasons.push(`Weak 5m ${pc5.toFixed(1)}%`)
+    if (pc5 >= 3 && pc5 <= 35) {
+      score += 15
+      reasons.push(`5m +${pc5.toFixed(1)}%`)
+    } else if (pc5 > 35 && pc5 <= 80) {
+      score += 8
+      reasons.push('Hot 5m move')
+    } else if (pc5 > 80) {
+      score -= 5
+      reasons.push('Parabolic risk')
+    } else if (pc5 < -20) {
+      score -= 18
+      reasons.push(`5m ${pc5.toFixed(1)}%`)
     }
   }
   if (pc1 != null) {
-    if (pc1 >= 10 && pc1 <= 80) {
-      score += 15
-      reasons.push(`Solid 1h +${pc1.toFixed(1)}%`)
-    } else if (pc1 < -20) {
-      score -= 12
-      reasons.push(`Weak 1h ${pc1.toFixed(1)}%`)
+    if (pc1 >= 8 && pc1 <= 60) {
+      score += 18
+      reasons.push(`1h +${pc1.toFixed(1)}%`)
+    } else if (pc1 > 60) {
+      score += 6
+      reasons.push('Strong 1h')
+    } else if (pc1 < -25) {
+      score -= 15
     }
   }
-  const vol = t.volume_24h
-  const liq = t.liquidity_usd
-  if (vol && liq && liq > 0) {
+  if (pc24 != null && pc24 > 20 && pc24 < 200) {
+    score += 8
+    reasons.push(`24h +${pc24.toFixed(0)}%`)
+  }
+  const vol = t.volume_24h || 0
+  const liq = t.liquidity_usd || 0
+  if (vol > 0 && liq > 0) {
     const ratio = vol / liq
-    if (ratio >= 0.5 && ratio <= 8) {
-      score += 10
-      reasons.push('Healthy volume/liquidity')
+    if (ratio >= 0.3 && ratio <= 12) {
+      score += 12
+      reasons.push('Healthy vol/liq')
+    } else if (ratio > 12) {
+      score += 4
+      reasons.push('High turnover')
     }
   }
   if (t.buy_sell_ratio != null) {
-    if (t.buy_sell_ratio >= 1.5) {
-      score += 12
-      reasons.push('Buy pressure dominant')
-    } else if (t.buy_sell_ratio < 0.7) {
-      score -= 12
-      reasons.push('Sell pressure dominant')
+    if (t.buy_sell_ratio >= 1.4) {
+      score += 14
+      reasons.push('Buy pressure')
+    } else if (t.buy_sell_ratio >= 1.1) {
+      score += 6
+    } else if (t.buy_sell_ratio < 0.75) {
+      score -= 14
+      reasons.push('Sell pressure')
     }
+  }
+  // pump.fun style mint bonus (ends with pump often)
+  if ((t.mint || '').toLowerCase().endsWith('pump')) {
+    score += 4
+    reasons.push('pump.fun style mint')
   }
   return { score: Math.max(0, Math.min(100, score)), reasons }
 }
@@ -270,13 +325,13 @@ function scoreToken(t) {
   const mom = momentumScore(t)
   const sm = 50
   const whale = 50
-  let opp = safety.score * 0.3 + mom.score * 0.25 + sm * 0.25 + whale * 0.2
-  if (safety.blocked) opp = Math.min(opp, 55)
+  let opp = safety.score * 0.28 + mom.score * 0.42 + sm * 0.15 + whale * 0.15
+  if (safety.blocked) opp = Math.min(opp, 52)
   opp = Math.max(0, Math.min(100, opp))
   let category = 'AVOID'
-  if (opp >= 90) category = 'ELITE'
-  else if (opp >= 80) category = 'HIGH POTENTIAL'
-  else if (opp >= 70) category = 'MODERATE'
+  if (opp >= 88) category = 'ELITE'
+  else if (opp >= 78) category = 'HIGH POTENTIAL'
+  else if (opp >= 68) category = 'MODERATE'
   return {
     ...t,
     safety_score: Math.round(safety.score * 10) / 10,
@@ -286,7 +341,7 @@ function scoreToken(t) {
     whale_score: whale,
     opportunity_score: Math.round(opp * 10) / 10,
     category,
-    main_reasons: [...safety.reasons.slice(0, 2), ...mom.reasons.slice(0, 2)],
+    main_reasons: [...mom.reasons.slice(0, 2), ...safety.reasons.slice(0, 1)],
   }
 }
 
@@ -314,8 +369,11 @@ function normalizePair(pair) {
     price_change_1h: f(pc.h1),
     price_change_24h: f(pc.h24),
     buy_sell_ratio: bsr,
+    txns_buys: buys,
+    txns_sells: sells,
     url: pair.url,
     dex: pair.dexId,
+    pairAddress: pair.pairAddress,
     source: 'dexscreener',
   }
 }
@@ -328,7 +386,28 @@ async function fetchPairs(query) {
   return Array.isArray(data.pairs) ? data.pairs : []
 }
 
-/** Jupiter quote: amountLamports of SOL -> token mint */
+async function fetchTokenBoosts() {
+  try {
+    const res = await fetch('https://api.dexscreener.com/token-boosts/latest/v1')
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
+}
+
+async function fetchPairsByToken(mint) {
+  try {
+    const res = await fetch(`https://api.dexscreener.com/token-pairs/v1/solana/${mint}`)
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
+}
+
 async function jupiterQuote(outputMint, amountLamports, slippageBps = 100) {
   const params = new URLSearchParams({
     inputMint: SOL_MINT,
@@ -365,26 +444,22 @@ export default function Page() {
   const [wallet, setWallet] = useState(null)
   const [tradingEnabled, setTradingEnabled] = useState(false)
   const [buyAmountSol, setBuyAmountSol] = useState(0.01)
-  const [slippageBps, setSlippageBps] = useState(100)
-  const [minOppToBuy, setMinOppToBuy] = useState(70)
+  const [slippageBps, setSlippageBps] = useState(150)
+  const [minOppToBuy, setMinOppToBuy] = useState(68)
   const [busyMint, setBusyMint] = useState(null)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [onlyPump, setOnlyPump] = useState(false)
   const [settings, setSettings] = useState({
-    minLiquidity: 5000,
+    minLiquidity: 3000,
     minVolume: 500,
-    minOpportunity: 70,
-    riskPerTrade: 1,
-    maxPosition: 5,
-    maxOpen: 3,
-    dailyLoss: 5,
-    stopLoss: 20,
-    takeProfit: 50,
+    maxLiquidity: 2000000,
   })
 
   const connectWallet = async () => {
     try {
       const provider = typeof window !== 'undefined' ? window.solana : null
       if (!provider?.isPhantom) {
-        setMsg('Phantom wallet not found. Install Phantom extension / app.')
+        setMsg('Phantom not found. Open this page in a browser with Phantom installed.')
         return
       }
       const res = await provider.connect()
@@ -398,8 +473,7 @@ export default function Page() {
 
   const disconnectWallet = async () => {
     try {
-      const provider = window.solana
-      if (provider?.disconnect) await provider.disconnect()
+      if (window.solana?.disconnect) await window.solana.disconnect()
     } catch (_) {}
     setWallet(null)
     setTradingEnabled(false)
@@ -407,68 +481,39 @@ export default function Page() {
   }
 
   const executeBuy = async (token) => {
-    if (!wallet) {
-      setMsg('Connect Phantom wallet first')
-      return
-    }
-    if (!tradingEnabled) {
-      setMsg('Enable trading toggle in Settings first (you still sign in Phantom)')
-      return
-    }
-    if (token.safety_blocked) {
-      setMsg('BUY blocked by safety engine')
-      return
-    }
+    if (!wallet) return setMsg('Connect Phantom first')
+    if (!tradingEnabled) return setMsg('Enable trading arm in Trading tab first')
+    if (token.safety_blocked) return setMsg('BUY blocked by safety checks')
     if ((token.opportunity_score || 0) < minOppToBuy) {
-      setMsg(`Opportunity ${token.opportunity_score} < min ${minOppToBuy}`)
-      return
+      return setMsg(`Score ${token.opportunity_score} < min ${minOppToBuy}`)
     }
     const lamports = Math.floor(Number(buyAmountSol) * 1e9)
-    if (!lamports || lamports < 1000) {
-      setMsg('Buy amount too small')
-      return
-    }
+    if (!lamports || lamports < 1000) return setMsg('Buy amount too small')
+
     setBusyMint(token.mint)
     setMsg(`Quoting ${token.symbol}…`)
     try {
       const quote = await jupiterQuote(token.mint, lamports, slippageBps)
-      setMsg(`Building swap for ${token.symbol}…`)
+      setMsg(`Building swap ${token.symbol}…`)
       const swap = await jupiterSwapTransaction(quote, wallet)
-      const swapTx = swap.swapTransaction
-      if (!swapTx) throw new Error('No swapTransaction from Jupiter')
+      if (!swap.swapTransaction) throw new Error('No swapTransaction')
 
-      // Deserialize + sign via Phantom (private key never leaves wallet)
-      const binary = atob(swapTx)
+      const binary = atob(swap.swapTransaction)
       const bytes = new Uint8Array(binary.length)
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
 
-      // Prefer @solana/web3.js if present; otherwise Phantom signAndSendTransaction with raw
       const provider = window.solana
-      if (!provider) throw new Error('Wallet provider missing')
+      if (!provider) throw new Error('Wallet missing')
 
-      // Phantom can sign VersionedTransaction if web3 is available on window
-      let signature
       if (window.solanaWeb3?.VersionedTransaction) {
         const tx = window.solanaWeb3.VersionedTransaction.deserialize(bytes)
         const signed = await provider.signAndSendTransaction(tx)
-        signature = signed.signature || signed
+        setMsg(`Submitted: ${String(signed.signature || signed).slice(0, 24)}…`)
       } else {
-        // Fallback: ask user to use a setup with @solana/web3.js
-        // Attempt Phantom's request method
-        const signed = await provider.request({
-          method: 'signAndSendTransaction',
-          params: {
-            message: swapTx,
-          },
-        }).catch(() => null)
-        if (!signed) {
-          throw new Error(
-            'Install @solana/web3.js in your Next app for reliable swap signing, or open the token on DexScreener/Jupiter manually.'
-          )
-        }
-        signature = signed.signature || signed
+        throw new Error(
+          'Add @solana/web3.js for swap signing, or buy manually on Jupiter/DexScreener.'
+        )
       }
-      setMsg(`Swap submitted: ${String(signature).slice(0, 20)}…`)
     } catch (e) {
       setMsg(String(e.message || e))
     } finally {
@@ -478,16 +523,27 @@ export default function Page() {
 
   const scan = useCallback(async () => {
     setLoading(true)
-    setMsg('Scanning Solana meme pairs…')
+    setMsg('Scanning meme candidates…')
     try {
-      const queries = ['SOL', 'meme', 'pepe', 'bonk', 'pump']
+      const queries = ['pump', 'meme', 'bonk', 'pepe', 'ai', 'dog', 'cat', 'frog']
       const all = []
       for (const q of queries) {
         try {
-          const pairs = await fetchPairs(q)
-          all.push(...pairs)
+          all.push(...(await fetchPairs(q)))
         } catch (_) {}
       }
+
+      // Boosted tokens enrichment
+      const boosts = await fetchTokenBoosts()
+      const solBoosts = boosts.filter((b) => (b.chainId || '').toLowerCase() === 'solana')
+      for (const b of solBoosts.slice(0, 15)) {
+        if (b.tokenAddress) {
+          try {
+            all.push(...(await fetchPairsByToken(b.tokenAddress)))
+          } catch (_) {}
+        }
+      }
+
       const seen = new Set()
       const scored = []
       for (const pair of all) {
@@ -496,38 +552,47 @@ export default function Page() {
         if (chain && chain !== 'solana') continue
         const n = normalizePair(pair)
         if (!n.mint || seen.has(n.mint)) continue
-        seen.add(n.mint)
+        if (!isMemeCandidate(n)) continue
+        if (onlyPump && !(n.mint || '').toLowerCase().endsWith('pump')) continue
         const liq = n.liquidity_usd || 0
         const vol = n.volume_24h || 0
         if (liq < settings.minLiquidity && vol < settings.minVolume) continue
+        if (liq > settings.maxLiquidity) continue
+        seen.add(n.mint)
         scored.push(scoreToken(n))
       }
+
       scored.sort((a, b) => (b.opportunity_score || 0) - (a.opportunity_score || 0))
-      setTokens(scored.slice(0, 40))
+      setTokens(scored.slice(0, 50))
       setLastScan(new Date().toISOString())
-      setMsg(
-        `Scan complete: ${scored.length} candidates (showing top ${Math.min(40, scored.length)})`
-      )
+      setMsg(`Found ${scored.length} meme candidates (showing top ${Math.min(50, scored.length)})`)
     } catch (e) {
       setMsg(String(e.message || e))
     } finally {
       setLoading(false)
     }
-  }, [settings.minLiquidity, settings.minVolume])
+  }, [settings, onlyPump])
 
   useEffect(() => {
     scan()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [scan])
 
   useEffect(() => {
-    const provider = typeof window !== 'undefined' ? window.solana : null
-    if (provider?.isPhantom && provider.publicKey) {
-      setWallet(provider.publicKey.toString())
-    }
+    if (!autoRefresh) return undefined
+    const id = setInterval(() => scan(), 45000)
+    return () => clearInterval(id)
+  }, [autoRefresh, scan])
+
+  useEffect(() => {
+    const p = typeof window !== 'undefined' ? window.solana : null
+    if (p?.isPhantom && p.publicKey) setWallet(p.publicKey.toString())
   }, [])
 
-  const top = useMemo(() => tokens.slice(0, 12), [tokens])
+  const top = useMemo(() => tokens.slice(0, 15), [tokens])
+  const hot = useMemo(
+    () => tokens.filter((t) => (t.opportunity_score || 0) >= 68).slice(0, 10),
+    [tokens]
+  )
   const avgOpp = useMemo(() => {
     if (!tokens.length) return 0
     return tokens.reduce((s, t) => s + (t.opportunity_score || 0), 0) / tokens.length
@@ -541,10 +606,58 @@ export default function Page() {
     ['about', 'About'],
   ]
 
+  const TokenRow = ({ t, showBuy }) => (
+    <tr key={t.mint}>
+      <td style={styles.td} title={t.mint}>
+        {t.url ? (
+          <a href={t.url} target="_blank" rel="noreferrer" style={{ color: '#eaecef', fontWeight: 600 }}>
+            {t.symbol || '—'}
+          </a>
+        ) : (
+          <strong>{t.symbol || '—'}</strong>
+        )}
+      </td>
+      <td style={styles.td}>{num(t.opportunity_score, 1)}</td>
+      <td style={styles.td}>
+        <CategoryTag category={t.category} />
+      </td>
+      <td style={styles.td}>{num(t.safety_score, 0)}</td>
+      <td style={{ ...styles.td, ...pctColor(t.price_change_1h) }}>
+        {t.price_change_1h != null ? `\( {t.price_change_1h > 0 ? '+' : ''} \){num(t.price_change_1h, 1)}%` : '—'}
+      </td>
+      <td style={styles.td}>{money(t.liquidity_usd)}</td>
+      <td style={styles.td}>{money(t.volume_24h)}</td>
+      <td style={styles.td}>
+        {t.price_usd != null
+          ? t.price_usd < 0.01
+            ? t.price_usd.toExponential(2)
+            : Number(t.price_usd).toPrecision(4)
+          : '—'}
+      </td>
+      {showBuy && (
+        <td style={styles.td}>
+          <button
+            type="button"
+            style={{
+              ...styles.btnSm,
+              ...((!wallet || !tradingEnabled || t.safety_blocked || busyMint === t.mint)
+                ? styles.btnDisabled
+                : {}),
+            }}
+            disabled={!wallet || !tradingEnabled || t.safety_blocked || busyMint === t.mint}
+            onClick={() => executeBuy(t)}
+          >
+            {busyMint === t.mint ? '…' : 'Buy'}
+          </button>
+        </td>
+      )}
+    </tr>
+  )
+
   return (
     <div style={styles.page}>
       <header style={styles.header}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <h1 style={styles.title}>Solana AI Meme Coin Hunter</h1>
           <span
             style={{
@@ -554,9 +667,6 @@ export default function Page() {
           >
             {tradingEnabled && wallet ? 'TRADING ARMED' : 'TRADING DISABLED'}
           </span>
-          {wallet && (
-            <span style={styles.badge}>{shortAddr(wallet)}</span>
-          )}
         </div>
         <nav style={styles.nav}>
           {tabs.map(([id, label]) => (
@@ -575,7 +685,7 @@ export default function Page() {
             </button>
           ) : (
             <button type="button" style={styles.btnSecondary} onClick={disconnectWallet}>
-              Disconnect
+              {shortAddr(wallet)}
             </button>
           )}
         </nav>
@@ -588,26 +698,26 @@ export default function Page() {
           <>
             <div style={styles.grid}>
               <div style={styles.stat}>
-                <div style={styles.label}>Tracked Tokens</div>
+                <div style={styles.label}>Meme Candidates</div>
                 <div style={styles.value}>{tokens.length}</div>
               </div>
               <div style={styles.stat}>
-                <div style={styles.label}>Avg Opportunity</div>
+                <div style={styles.label}>Hot (≥68)</div>
+                <div style={{ ...styles.value, color: '#0ecb81' }}>{hot.length}</div>
+              </div>
+              <div style={styles.stat}>
+                <div style={styles.label}>Avg Score</div>
                 <div style={styles.value}>{num(avgOpp, 1)}</div>
               </div>
               <div style={styles.stat}>
-                <div style={styles.label}>Buy Size (SOL)</div>
-                <div style={styles.value}>{buyAmountSol}</div>
+                <div style={styles.label}>Buy Size</div>
+                <div style={styles.value}>{buyAmountSol} SOL</div>
               </div>
               <div style={styles.stat}>
                 <div style={styles.label}>Wallet</div>
-                <div style={{ ...styles.value, fontSize: '0.9rem' }}>
+                <div style={{ ...styles.value, fontSize: '0.85rem' }}>
                   {wallet ? shortAddr(wallet) : 'Not connected'}
                 </div>
-              </div>
-              <div style={styles.stat}>
-                <div style={styles.label}>Data Source</div>
-                <div style={{ ...styles.value, fontSize: '0.95rem' }}>DexScreener</div>
               </div>
               <div style={styles.stat}>
                 <div style={styles.label}>Last Scan</div>
@@ -619,79 +729,45 @@ export default function Page() {
 
             <div style={styles.panel}>
               <div style={styles.panelH}>
-                <span>Top Opportunities</span>
-                <button
-                  type="button"
-                  style={{ ...styles.btn, ...(loading ? styles.btnDisabled : {}) }}
-                  disabled={loading}
-                  onClick={scan}
-                >
-                  {loading ? 'Scanning…' : 'Scan Now'}
-                </button>
+                <span>Top Meme Opportunities</span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <label style={{ fontSize: 11, color: '#848e9c', display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={autoRefresh}
+                      onChange={(e) => setAutoRefresh(e.target.checked)}
+                    />
+                    Auto 45s
+                  </label>
+                  <button
+                    type="button"
+                    style={{ ...styles.btn, ...(loading ? styles.btnDisabled : {}) }}
+                    disabled={loading}
+                    onClick={scan}
+                  >
+                    {loading ? 'Scanning…' : 'Scan Now'}
+                  </button>
+                </div>
               </div>
               <div style={styles.panelB}>
                 <table style={styles.table}>
                   <thead>
                     <tr>
-                      {['Symbol', 'Score', 'Category', 'Safety', 'Liquidity', 'Volume', 'Price', 'Action'].map(
-                        (h) => (
-                          <th key={h} style={styles.th}>
-                            {h}
-                          </th>
-                        )
-                      )}
+                      {['Symbol', 'Score', 'Cat', 'Safety', '1h %', 'Liq', 'Vol', 'Price', 'Buy'].map((h) => (
+                        <th key={h} style={styles.th}>
+                          {h}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
                     {top.map((t) => (
-                      <tr key={t.mint}>
-                        <td style={styles.td} title={t.mint}>
-                          {t.url ? (
-                            <a href={t.url} target="_blank" rel="noreferrer" style={{ color: '#eaecef' }}>
-                              {t.symbol || '—'}
-                            </a>
-                          ) : (
-                            t.symbol || '—'
-                          )}
-                        </td>
-                        <td style={styles.td}>{num(t.opportunity_score, 1)}</td>
-                        <td style={styles.td}>
-                          <CategoryTag category={t.category} />
-                        </td>
-                        <td style={styles.td}>{num(t.safety_score, 0)}</td>
-                        <td style={styles.td}>{money(t.liquidity_usd)}</td>
-                        <td style={styles.td}>{money(t.volume_24h)}</td>
-                        <td style={styles.td}>
-                          {t.price_usd != null ? Number(t.price_usd).toPrecision(4) : '—'}
-                        </td>
-                        <td style={styles.td}>
-                          <button
-                            type="button"
-                            style={{
-                              ...styles.btn,
-                              fontSize: 11,
-                              padding: '4px 8px',
-                              ...((!wallet || !tradingEnabled || t.safety_blocked || busyMint === t.mint)
-                                ? styles.btnDisabled
-                                : {}),
-                            }}
-                            disabled={
-                              !wallet ||
-                              !tradingEnabled ||
-                              t.safety_blocked ||
-                              busyMint === t.mint
-                            }
-                            onClick={() => executeBuy(t)}
-                          >
-                            {busyMint === t.mint ? '…' : 'Buy'}
-                          </button>
-                        </td>
-                      </tr>
+                      <TokenRow key={t.mint} t={t} showBuy />
                     ))}
                     {!top.length && (
                       <tr>
-                        <td style={{ ...styles.td, ...styles.muted }} colSpan={8}>
-                          No data yet. Click Scan Now.
+                        <td style={{ ...styles.td, ...styles.muted }} colSpan={9}>
+                          No meme candidates. Click Scan Now.
                         </td>
                       </tr>
                     )}
@@ -705,69 +781,25 @@ export default function Page() {
         {tab === 'opportunities' && (
           <div style={styles.panel}>
             <div style={styles.panelH}>
-              <span>Live Token Scanner</span>
-              <button
-                type="button"
-                style={{ ...styles.btn, ...(loading ? styles.btnDisabled : {}) }}
-                disabled={loading}
-                onClick={scan}
-              >
-                {loading ? 'Scanning…' : 'Refresh Scan'}
+              <span>Full Scanner ({tokens.length})</span>
+              <button type="button" style={styles.btn} disabled={loading} onClick={scan}>
+                {loading ? 'Scanning…' : 'Refresh'}
               </button>
             </div>
             <div style={styles.panelB}>
               <table style={styles.table}>
                 <thead>
                   <tr>
-                    {['Symbol', 'Name', 'Opp', 'Cat', 'Safety', 'Mom', 'Liq', 'Blocked', 'Buy'].map(
-                      (h) => (
-                        <th key={h} style={styles.th}>
-                          {h}
-                        </th>
-                      )
-                    )}
+                    {['Symbol', 'Score', 'Cat', 'Safety', '1h %', 'Liq', 'Vol', 'Price', 'Buy'].map((h) => (
+                      <th key={h} style={styles.th}>
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {tokens.map((t) => (
-                    <tr key={t.mint}>
-                      <td style={styles.td}>{t.symbol || '—'}</td>
-                      <td
-                        style={{
-                          ...styles.td,
-                          maxWidth: 120,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {t.name || '—'}
-                      </td>
-                      <td style={styles.td}>{num(t.opportunity_score, 1)}</td>
-                      <td style={styles.td}>
-                        <CategoryTag category={t.category} />
-                      </td>
-                      <td style={styles.td}>{num(t.safety_score, 0)}</td>
-                      <td style={styles.td}>{num(t.momentum_score, 0)}</td>
-                      <td style={styles.td}>{money(t.liquidity_usd)}</td>
-                      <td style={styles.td}>{t.safety_blocked ? 'YES' : 'No'}</td>
-                      <td style={styles.td}>
-                        <button
-                          type="button"
-                          style={{
-                            ...styles.btn,
-                            fontSize: 11,
-                            padding: '4px 8px',
-                            ...((!wallet || !tradingEnabled || t.safety_blocked)
-                              ? styles.btnDisabled
-                              : {}),
-                          }}
-                          disabled={!wallet || !tradingEnabled || t.safety_blocked}
-                          onClick={() => executeBuy(t)}
-                        >
-                          Buy
-                        </button>
-                      </td>
-                    </tr>
+                    <TokenRow key={t.mint} t={t} showBuy />
                   ))}
                 </tbody>
               </table>
@@ -777,11 +809,10 @@ export default function Page() {
 
         {tab === 'trading' && (
           <div style={styles.panel}>
-            <div style={styles.panelH}>Live Trading (Wallet-signed only)</div>
-            <div style={styles.panelB}>
-              <p style={{ ...styles.muted, marginBottom: 12, lineHeight: 1.5 }}>
-                Private keys are <strong>never</strong> stored in this page. Trades are signed
-                by Phantom. You must confirm each transaction in the wallet.
+            <div style={styles.panelH}>Trading Controls</div>
+            <div style={{ ...styles.panelB, padding: 14 }}>
+              <p style={{ ...styles.muted, marginBottom: 12, fontSize: 12, lineHeight: 1.5 }}>
+                No private keys on this page. Each buy is signed in Phantom. High risk — size small.
               </p>
               <div style={styles.formGrid}>
                 <div>
@@ -805,7 +836,7 @@ export default function Page() {
                   />
                 </div>
                 <div>
-                  <div style={styles.label}>Min opportunity score to buy</div>
+                  <div style={styles.label}>Min score to allow Buy</div>
                   <input
                     style={styles.input}
                     type="number"
@@ -814,85 +845,100 @@ export default function Page() {
                   />
                 </div>
                 <div>
-                  <div style={styles.label}>Enable trading arm</div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                  <div style={styles.label}>Arm trading</div>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
                     <input
                       type="checkbox"
                       checked={tradingEnabled}
                       onChange={(e) => setTradingEnabled(e.target.checked)}
                     />
-                    <span style={{ fontSize: 13 }}>
-                      I understand trading is high risk
-                    </span>
+                    <span style={{ fontSize: 12 }}>I accept trading risk</span>
                   </label>
                 </div>
               </div>
-              <div style={{ marginTop: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ marginTop: 14, display: 'flex', gap: 8 }}>
                 {!wallet ? (
                   <button type="button" style={styles.btn} onClick={connectWallet}>
                     Connect Phantom
                   </button>
                 ) : (
                   <button type="button" style={styles.btnSecondary} onClick={disconnectWallet}>
-                    Disconnect {shortAddr(wallet)}
+                    Disconnect
                   </button>
                 )}
               </div>
-              <p style={{ ...styles.muted, marginTop: 14, fontSize: 12 }}>
-                For reliable signing, add <code>@solana/web3.js</code> to your Next.js project
-                and expose VersionedTransaction if needed. Auto-trading with a server private
-                key must run on a backend only — never in Vercel client code.
-              </p>
             </div>
           </div>
         )}
 
         {tab === 'settings' && (
           <div style={styles.panel}>
-            <div style={styles.panelH}>Scanner filters (UI only)</div>
-            <div style={styles.panelB}>
+            <div style={styles.panelH}>Scanner filters</div>
+            <div style={{ ...styles.panelB, padding: 14 }}>
               <div style={styles.formGrid}>
-                {[
-                  ['minLiquidity', 'Min Liquidity USD'],
-                  ['minVolume', 'Min Volume USD'],
-                  ['minOpportunity', 'Min Opportunity Score'],
-                  ['riskPerTrade', 'Risk Per Trade %'],
-                  ['maxPosition', 'Max Position Size USD'],
-                  ['maxOpen', 'Max Open Positions'],
-                  ['dailyLoss', 'Daily Loss Limit %'],
-                  ['stopLoss', 'Stop Loss %'],
-                  ['takeProfit', 'Take Profit %'],
-                ].map(([key, label]) => (
-                  <div key={key}>
-                    <div style={styles.label}>{label}</div>
+                <div>
+                  <div style={styles.label}>Min liquidity USD</div>
+                  <input
+                    style={styles.input}
+                    type="number"
+                    value={settings.minLiquidity}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, minLiquidity: parseFloat(e.target.value) || 0 }))
+                    }
+                  />
+                </div>
+                <div>
+                  <div style={styles.label}>Min volume USD</div>
+                  <input
+                    style={styles.input}
+                    type="number"
+                    value={settings.minVolume}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, minVolume: parseFloat(e.target.value) || 0 }))
+                    }
+                  />
+                </div>
+                <div>
+                  <div style={styles.label}>Max liquidity USD</div>
+                  <input
+                    style={styles.input}
+                    type="number"
+                    value={settings.maxLiquidity}
+                    onChange={(e) =>
+                      setSettings((s) => ({ ...s, maxLiquidity: parseFloat(e.target.value) || 0 }))
+                    }
+                  />
+                </div>
+                <div>
+                  <div style={styles.label}>Only pump.fun mints</div>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
                     <input
-                      style={styles.input}
-                      type="number"
-                      value={settings[key]}
-                      onChange={(e) =>
-                        setSettings((s) => ({
-                          ...s,
-                          [key]: parseFloat(e.target.value) || 0,
-                        }))
-                      }
+                      type="checkbox"
+                      checked={onlyPump}
+                      onChange={(e) => setOnlyPump(e.target.checked)}
                     />
-                  </div>
-                ))}
+                    <span style={{ fontSize: 12 }}>Filter *pump mints</span>
+                  </label>
+                </div>
               </div>
+              <button type="button" style={{ ...styles.btn, marginTop: 14 }} onClick={scan}>
+                Apply & Rescan
+              </button>
             </div>
           </div>
         )}
 
         {tab === 'about' && (
           <div style={styles.panel}>
-            <div style={styles.panelH}>About & security</div>
-            <div style={styles.panelB}>
-              <ul style={{ ...styles.muted, lineHeight: 1.8, paddingLeft: 18 }}>
-                <li>Scanner uses public DexScreener data</li>
-                <li>Scores are informational only</li>
-                <li>No private keys in this frontend</li>
-                <li>Buys require Phantom signature</li>
-                <li>No promise of profit — high risk</li>
+            <div style={styles.panelH}>About v2</div>
+            <div style={{ ...styles.panelB, padding: 14 }}>
+              <ul style={{ ...styles.muted, lineHeight: 1.8, paddingLeft: 18, fontSize: 13 }}>
+                <li>Filters out SOL/USDC/major pairs (fixes fake SOL rows)</li>
+                <li>Boosts + meme keyword scan + pump.fun style detection</li>
+                <li>Stronger momentum weighting in opportunity score</li>
+                <li>Auto-refresh every 45s (toggleable)</li>
+                <li>Wallet buys via Jupiter + Phantom — no private keys in code</li>
+                <li>No profit guarantee — trade small</li>
               </ul>
             </div>
           </div>
@@ -900,7 +946,7 @@ export default function Page() {
       </main>
 
       <footer style={styles.footer}>
-        Solana AI Meme Coin Hunter · Not financial advice · Never paste private keys here
+        Solana AI Meme Coin Hunter v2 · Not financial advice · Never paste private keys
       </footer>
     </div>
   )
