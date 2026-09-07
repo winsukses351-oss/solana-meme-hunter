@@ -6,30 +6,48 @@ export default function SystemStatus({
   backendStatus = "CHECKING",
   dbStatus = "CHECKING",
   solanaRpcData = null,
+  marketDataHealth = null,
 }) {
   const [logs, setLogs] = useState([]);
 
   const rpcStatus = solanaRpcData?.status || "CHECKING";
+  const marketStatus = marketDataHealth?.status || "CHECKING";
+  const birdeyeStatus = marketDataHealth?.birdeyeStatus || "NOT_CONFIGURED";
+  const dexscreenerStatus = marketDataHealth?.dexScreenerStatus || "CHECKING";
 
   useEffect(() => {
     const now = new Date().toISOString().split("T")[1].slice(0, 8);
 
     let rpcLogMsg = `SOLANA RPC: Not configured`;
     if (rpcStatus === "CONNECTED") {
-      rpcLogMsg = `SOLANA RPC: Connected (Slot: ${solanaRpcData?.slot || "N/A"}, Latency: ${solanaRpcData?.latencyMs ?? "N/A"}ms)`;
+      rpcLogMsg = `SOLANA RPC: Connected (Slot: ${solanaRpcData?.slot || "N/A"})`;
     } else if (rpcStatus === "ERROR") {
       rpcLogMsg = `SOLANA RPC: Health check failed`;
     }
 
+    let mktLogMsg = `MARKET DATA: Not configured`;
+    if (marketStatus === "CONNECTED") {
+      mktLogMsg = `MARKET DATA: Connected via ${marketDataHealth?.activeProvider || "provider"}`;
+    } else if (marketStatus === "ERROR") {
+      mktLogMsg = `MARKET DATA: Provider unavailable`;
+    }
+
     const initialLogs = [
-      `[${now}] INFO: Frontend initialized`,
-      `[${now}] INFO: Terminal Phase 1-3 active`,
+      `[${now}] INFO: Terminal Phase 1–4 active`,
       `[${now}] BACKEND: API status -> ${backendStatus}`,
       `[${now}] DATABASE: Connection status -> ${dbStatus}`,
       `[${now}] ${rpcLogMsg}`,
+      `[${now}] ${mktLogMsg}`,
     ];
     setLogs(initialLogs);
-  }, [backendStatus, dbStatus, rpcStatus, solanaRpcData?.slot, solanaRpcData?.latencyMs]);
+  }, [
+    backendStatus,
+    dbStatus,
+    rpcStatus,
+    marketStatus,
+    solanaRpcData?.slot,
+    marketDataHealth?.activeProvider,
+  ]);
 
   const getDbDisplayStatus = () => {
     if (dbStatus === "connected") return "CONNECTED";
@@ -45,10 +63,24 @@ export default function SystemStatus({
     return "CHECKING...";
   };
 
+  const getMarketDisplayStatus = () => {
+    if (marketStatus === "CONNECTED") return "CONNECTED";
+    if (marketStatus === "NOT_CONFIGURED") return "NOT CONFIGURED";
+    if (marketStatus === "ERROR") return "ERROR";
+    return "CHECKING...";
+  };
+
+  const getProviderDisplay = (statusStr) => {
+    if (statusStr === "CONNECTED") return "CONNECTED";
+    if (statusStr === "NOT_CONFIGURED") return "NOT CONFIGURED";
+    if (statusStr === "ERROR") return "ERROR";
+    return "NOT CONNECTED";
+  };
+
   const systemHealth = [
     { label: "DATABASE", status: getDbDisplayStatus() },
     { label: "SOLANA RPC", status: getRpcDisplayStatus() },
-    { label: "MARKET DATA", status: "NOT CONNECTED" },
+    { label: "MARKET DATA", status: getMarketDisplayStatus() },
     { label: "WALLET / SIGNER", status: "NOT CONNECTED" },
     { label: "EXECUTION PROVIDER", status: "NOT CONNECTED" },
     { label: "SAFETY ENGINE", status: "NOT CONNECTED" },
@@ -62,28 +94,18 @@ export default function SystemStatus({
   ];
 
   const apiHealth = [
-    { provider: "Birdeye", status: "NOT CONNECTED" },
-    { provider: "DexScreener", status: "NOT CONNECTED" },
+    { provider: "Birdeye", status: getProviderDisplay(birdeyeStatus) },
+    { provider: "DexScreener", status: getProviderDisplay(dexscreenerStatus) },
     { provider: "Jupiter", status: "NOT CONNECTED" },
-    {
-      provider: "Solana RPC",
-      status: getRpcDisplayStatus(),
-    },
-    {
-      provider: "PostgreSQL",
-      status: getDbDisplayStatus(),
-    },
-    {
-      provider: "Backend API",
-      status: backendStatus === "connected" ? "CONNECTED" : "ERROR",
-    },
+    { provider: "Solana RPC", status: getRpcDisplayStatus() },
+    { provider: "PostgreSQL", status: getDbDisplayStatus() },
+    { provider: "Backend API", status: backendStatus === "connected" ? "CONNECTED" : "ERROR" },
   ];
 
   return (
     <div className="space-y-4">
       {/* Trading Status & Emergency Control Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Trading Status Banner */}
         <section className="lg:col-span-2 bg-[#121721] border border-red-900/50 rounded-lg p-3 sm:p-4 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -95,15 +117,14 @@ export default function SystemStatus({
               </span>
             </div>
             <div className="text-sm font-mono font-bold text-slate-200 mt-1">
-              Reason: Read-only Solana RPC mainnet integration complete. Live trading is disabled in Phase 3.
+              Reason: Real market data integration complete. Live trading remains disabled in Phase 4.
             </div>
             <p className="text-xs font-mono text-slate-400 mt-1">
-              Current state: BLOCKED — Read-Only RPC Active
+              Current state: BLOCKED — Read-Only Market Data
             </p>
           </div>
         </section>
 
-        {/* Emergency Stop Panel */}
         <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -124,7 +145,7 @@ export default function SystemStatus({
         </section>
       </div>
 
-      {/* Solana Mainnet Telemetry Bar (If Connected) */}
+      {/* Solana Telemetry Banner */}
       {rpcStatus === "CONNECTED" && solanaRpcData && (
         <section className="bg-[#121721] border border-emerald-900/40 rounded-lg p-3">
           <div className="flex items-center justify-between mb-2">
@@ -159,7 +180,6 @@ export default function SystemStatus({
 
       {/* System Health & API Health Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* System Health */}
         <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4">
           <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 border-b border-slate-800/80 pb-2">
             System Health
@@ -187,7 +207,6 @@ export default function SystemStatus({
           </div>
         </section>
 
-        {/* API Health */}
         <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4">
           <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 border-b border-slate-800/80 pb-2">
             API Health
