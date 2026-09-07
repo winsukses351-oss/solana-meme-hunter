@@ -11,6 +11,8 @@ export async function GET() {
     return NextResponse.json(
       {
         status: "ERROR",
+        pairsDiscovered: 0,
+        solanaPairs: 0,
         scanned: 0,
         uniqueTokens: 0,
         filteredCount: 0,
