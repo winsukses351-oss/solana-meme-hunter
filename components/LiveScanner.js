@@ -5,6 +5,7 @@ export default function LiveScanner({ hunterData = null, marketDataStatus = "CHE
   const candidates = hunterData?.candidates || [];
   const breakdown = hunterData?.rejectionBreakdown || {};
   const thresholds = hunterData?.currentThresholds || {};
+  const diagnosticsStats = hunterData?.diagnosticsStats || {};
 
   return (
     <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4 space-y-3">
@@ -43,7 +44,7 @@ export default function LiveScanner({ hunterData = null, marketDataStatus = "CHE
         <div className="bg-[#0b0e14] p-2.5 rounded border border-slate-800/60">
           <div className="text-[10px] text-slate-500">PAIRS DISCOVERED</div>
           <div className="text-slate-200 font-bold text-sm mt-0.5">
-            {isConnected ? hunterData?.scanned ?? 0 : 0}
+            {isConnected ? hunterData?.pairsDiscovered ?? 0 : 0}
           </div>
         </div>
         <div className="bg-[#0b0e14] p-2.5 rounded border border-slate-800/60">
@@ -80,6 +81,18 @@ export default function LiveScanner({ hunterData = null, marketDataStatus = "CHE
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[10px]">
             <div className="bg-[#121721] p-1.5 rounded border border-slate-800/50 flex justify-between items-center">
+              <span className="text-slate-400">EXCLUDED NATIVE SOL:</span>
+              <span className="font-bold text-slate-300">{breakdown.NATIVE_SOL ?? 0}</span>
+            </div>
+            <div className="bg-[#121721] p-1.5 rounded border border-slate-800/50 flex justify-between items-center">
+              <span className="text-slate-400">EXCLUDED STABLECOINS:</span>
+              <span className="font-bold text-slate-300">{breakdown.EXCLUDED_STABLECOIN ?? 0}</span>
+            </div>
+            <div className="bg-[#121721] p-1.5 rounded border border-slate-800/50 flex justify-between items-center">
+              <span className="text-slate-400">EXCLUDED QUOTE ASSETS:</span>
+              <span className="font-bold text-slate-300">{breakdown.EXCLUDED_QUOTE_ASSET ?? 0}</span>
+            </div>
+            <div className="bg-[#121721] p-1.5 rounded border border-slate-800/50 flex justify-between items-center">
               <span className="text-slate-400">LOW LIQUIDITY:</span>
               <span className="font-bold text-amber-400">{breakdown.LOW_LIQUIDITY ?? 0}</span>
             </div>
@@ -96,20 +109,10 @@ export default function LiveScanner({ hunterData = null, marketDataStatus = "CHE
               <span className="font-bold text-red-400">{breakdown.MISSING_VOLUME ?? 0}</span>
             </div>
             <div className="bg-[#121721] p-1.5 rounded border border-slate-800/50 flex justify-between items-center">
-              <span className="text-slate-400">EXCLUDED ASSET:</span>
-              <span className="font-bold text-slate-300">{breakdown.EXCLUDED_ASSET ?? 0}</span>
-            </div>
-            <div className="bg-[#121721] p-1.5 rounded border border-slate-800/50 flex justify-between items-center">
-              <span className="text-slate-400">NATIVE SOL:</span>
-              <span className="font-bold text-slate-300">{breakdown.NATIVE_SOL ?? 0}</span>
-            </div>
-            <div className="bg-[#121721] p-1.5 rounded border border-slate-800/50 flex justify-between items-center">
-              <span className="text-slate-400">MISSING PRICE:</span>
-              <span className="font-bold text-red-400">{breakdown.MISSING_PRICE ?? 0}</span>
-            </div>
-            <div className="bg-[#121721] p-1.5 rounded border border-slate-800/50 flex justify-between items-center">
-              <span className="text-slate-400">INVALID PRICE:</span>
-              <span className="font-bold text-red-400">{breakdown.INVALID_PRICE ?? 0}</span>
+              <span className="text-slate-400">MISSING/INVALID PRICE:</span>
+              <span className="font-bold text-red-400">
+                {(breakdown.MISSING_PRICE ?? 0) + (breakdown.INVALID_PRICE ?? 0)}
+              </span>
             </div>
           </div>
         </div>
@@ -123,25 +126,29 @@ export default function LiveScanner({ hunterData = null, marketDataStatus = "CHE
           </div>
         ) : candidates.length === 0 ? (
           <div className="p-6 text-center text-xs font-mono text-slate-400 space-y-1">
-            <div>No candidates passed current discovery filters in the current scan window.</div>
+            <div>No valid token candidates passed current liquidity and asset filters in this scan.</div>
             <div className="text-[10px] text-slate-500">
-              (All {hunterData?.uniqueTokens ?? 0} discovered tokens failed minimum liquidity, volume, or safety criteria)
+              {breakdown.NATIVE_SOL === hunterData?.uniqueTokens
+                ? "All discovered assets were excluded as native/infrastructure assets."
+                : `Candidates filtered by liquidity (${breakdown.LOW_LIQUIDITY ?? 0}), volume (${breakdown.LOW_VOLUME ?? 0}), or asset exclusions.`}
             </div>
           </div>
         ) : (
-          <table className="w-full text-left font-mono text-xs text-slate-300 min-w-[650px]">
+          <table className="w-full text-left font-mono text-xs text-slate-300 min-w-[700px]">
             <thead className="bg-[#121721] text-[10px] uppercase text-slate-400 border-b border-slate-800">
               <tr>
                 <th className="p-2">Token</th>
                 <th className="p-2">Token Address</th>
                 <th className="p-2">Price (USD)</th>
                 <th className="p-2">24h Change</th>
+                <th className="p-2">24h Volume</th>
                 <th className="p-2">Liquidity</th>
+                <th className="p-2">DEX</th>
                 <th className="p-2">Discovery Score</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50 text-[11px]">
-              {candidates.slice(0, 5).map((tok, idx) => {
+              {candidates.map((tok, idx) => {
                 const addr = tok.tokenAddress || "";
                 const truncatedAddr =
                   addr.length > 8 ? `${addr.slice(0, 4)}...${addr.slice(-4)}` : addr;
@@ -169,11 +176,17 @@ export default function LiveScanner({ hunterData = null, marketDataStatus = "CHE
                         ? `${tok.priceChange24h >= 0 ? "+" : ""}${tok.priceChange24h.toFixed(2)}%`
                         : "--"}
                     </td>
-                    <td className="p-2">
+                    <td className="p-2 text-slate-300">
+                      {tok.volume24hUsd !== null
+                        ? `$${Math.round(tok.volume24hUsd).toLocaleString()}`
+                        : "--"}
+                    </td>
+                    <td className="p-2 text-slate-300">
                       {tok.liquidityUsd !== null
                         ? `$${Math.round(tok.liquidityUsd).toLocaleString()}`
                         : "--"}
                     </td>
+                    <td className="p-2 text-slate-400 text-[10px] uppercase">{tok.dex}</td>
                     <td className="p-2 font-bold text-emerald-400">
                       {tok.discoveryScore} / 100
                     </td>
