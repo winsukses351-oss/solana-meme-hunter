@@ -16,6 +16,8 @@ export async function GET() {
         uniqueTokens: hunterData.uniqueTokens,
         filtered: hunterData.filteredCount,
         candidates: hunterData.candidateCount,
+        diagnostics: hunterData.rejectionBreakdown || {},
+        currentThresholds: hunterData.currentThresholds || {},
         scanDurationMs: hunterData.scanDurationMs,
         checkedAt: hunterData.timestamp,
       },
