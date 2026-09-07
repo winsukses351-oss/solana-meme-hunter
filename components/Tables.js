@@ -1,44 +1,58 @@
 "use client";
 
-export function TopOpportunitiesTable() {
+export function TopOpportunitiesTable({ tokensData = [], marketDataStatus = "CHECKING" }) {
+  const isConnected = marketDataStatus === "CONNECTED";
+
   return (
-    <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-800/80 pb-2 mb-3">
+    <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4 space-y-3">
+      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
         <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-          Top Opportunities
+          TOP OPPORTUNITIES (REAL MARKET DISCOVERY)
         </h2>
-        <span className="text-[10px] text-amber-500/80 font-mono">
-          No market data connected
+        <span className="text-[10px] font-mono text-slate-500">
+          Decision Engine: <strong className="text-amber-500">NOT AVAILABLE</strong>
         </span>
       </div>
 
-      <p className="text-[11px] text-slate-400 mb-3 italic">
-        Opportunities will appear when the market-data engine is connected.
-      </p>
-
-      {/* Responsive Horizontal Scroll Container */}
-      <div className="overflow-x-auto rounded border border-slate-800/60">
-        <table className="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr className="bg-[#0b0e14] text-slate-400 font-mono border-b border-slate-800">
-              <th className="p-2.5 font-normal">TOKEN</th>
-              <th className="p-2.5 font-normal">PRICE</th>
-              <th className="p-2.5 font-normal">LIQUIDITY</th>
-              <th className="p-2.5 font-normal">VOLUME</th>
-              <th className="p-2.5 font-normal">SMART MONEY</th>
-              <th className="p-2.5 font-normal">WHALE MOMENTUM</th>
-              <th className="p-2.5 font-normal">SAFETY</th>
-              <th className="p-2.5 font-normal">OPPORTUNITY STATUS</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colSpan={8} className="p-4 text-center text-slate-500 font-mono bg-[#0b0e14]/50">
-                WAITING FOR BACKEND
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="bg-[#0b0e14] border border-slate-800/80 rounded overflow-x-auto">
+        {!isConnected ? (
+          <div className="p-6 text-center text-xs font-mono text-slate-500">
+            Market data offline. Top opportunities feed unavailable.
+          </div>
+        ) : tokensData.length === 0 ? (
+          <div className="p-6 text-center text-xs font-mono text-slate-500">
+            No real token candidates detected.
+          </div>
+        ) : (
+          <table className="w-full text-left font-mono text-xs text-slate-300 min-w-[700px]">
+            <thead className="bg-[#121721] text-[10px] uppercase text-slate-400 border-b border-slate-800">
+              <tr>
+                <th className="p-2.5">Token</th>
+                <th className="p-2.5">Price</th>
+                <th className="p-2.5">24h Vol</th>
+                <th className="p-2.5">Liquidity</th>
+                <th className="p-2.5">Safety</th>
+                <th className="p-2.5">Opportunity Score</th>
+                <th className="p-2.5">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/50 text-[11px]">
+              {tokensData.map((tok, idx) => (
+                <tr key={idx} className="hover:bg-slate-900/40">
+                  <td className="p-2.5 font-bold text-slate-200">
+                    {tok.symbol} <span className="text-[9px] font-normal text-slate-500">({tok.dex})</span>
+                  </td>
+                  <td className="p-2.5">${tok.price < 0.01 ? tok.price.toFixed(6) : tok.price.toFixed(2)}</td>
+                  <td className="p-2.5">${Math.round(tok.volume24hUsd).toLocaleString()}</td>
+                  <td className="p-2.5">${Math.round(tok.liquidityUsd).toLocaleString()}</td>
+                  <td className="p-2.5 text-slate-500">--</td>
+                  <td className="p-2.5 text-slate-500">--</td>
+                  <td className="p-2.5 text-[10px] text-amber-400 font-semibold uppercase">DISCOVERED ONLY</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </section>
   );
@@ -46,39 +60,15 @@ export function TopOpportunitiesTable() {
 
 export function OpenPositionsTable() {
   return (
-    <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4">
-      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 mb-3">
+    <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4 space-y-3">
+      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
         <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-          Open Positions
+          OPEN POSITIONS
         </h2>
-        <span className="text-[10px] text-slate-500 font-mono">0 ACTIVE</span>
+        <span className="text-[10px] font-mono text-slate-500">Active Positions: 0</span>
       </div>
-
-      <p className="text-[11px] text-slate-400 mb-3">No active positions.</p>
-
-      <div className="overflow-x-auto rounded border border-slate-800/60">
-        <table className="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr className="bg-[#0b0e14] text-slate-400 font-mono border-b border-slate-800">
-              <th className="p-2.5 font-normal">TOKEN</th>
-              <th className="p-2.5 font-normal">ENTRY</th>
-              <th className="p-2.5 font-normal">CURRENT</th>
-              <th className="p-2.5 font-normal">SIZE</th>
-              <th className="p-2.5 font-normal">PNL</th>
-              <th className="p-2.5 font-normal">TP</th>
-              <th className="p-2.5 font-normal">SL</th>
-              <th className="p-2.5 font-normal">TRAILING</th>
-              <th className="p-2.5 font-normal">STATUS</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colSpan={9} className="p-4 text-center text-slate-500 font-mono bg-[#0b0e14]/50">
-                No positions recorded
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="bg-[#0b0e14] border border-slate-800/80 rounded p-6 text-center font-mono text-xs text-slate-500">
+        No open positions. Live execution is BLOCKED in Phase 4.
       </div>
     </section>
   );
@@ -86,40 +76,15 @@ export function OpenPositionsTable() {
 
 export function TradeHistoryTable() {
   return (
-    <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4">
-      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2 mb-3">
+    <section className="bg-[#121721] border border-slate-800 rounded-lg p-3 sm:p-4 space-y-3">
+      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
         <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-          Trade History
+          TRADE HISTORY
         </h2>
-        <span className="text-[10px] text-slate-500 font-mono">0 TRADES</span>
+        <span className="text-[10px] font-mono text-slate-500">Total Executions: 0</span>
       </div>
-
-      <p className="text-[11px] text-slate-400 mb-3">No trades recorded.</p>
-
-      <div className="overflow-x-auto rounded border border-slate-800/60">
-        <table className="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr className="bg-[#0b0e14] text-slate-400 font-mono border-b border-slate-800">
-              <th className="p-2.5 font-normal">TIME</th>
-              <th className="p-2.5 font-normal">TOKEN</th>
-              <th className="p-2.5 font-normal">SIDE</th>
-              <th className="p-2.5 font-normal">SIZE</th>
-              <th className="p-2.5 font-normal">ENTRY</th>
-              <th className="p-2.5 font-normal">EXIT</th>
-              <th className="p-2.5 font-normal">GROSS PNL</th>
-              <th className="p-2.5 font-normal">COST</th>
-              <th className="p-2.5 font-normal">NET PNL</th>
-              <th className="p-2.5 font-normal">STATUS</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td colSpan={10} className="p-4 text-center text-slate-500 font-mono bg-[#0b0e14]/50">
-                No trade history available
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div className="bg-[#0b0e14] border border-slate-800/80 rounded p-6 text-center font-mono text-xs text-slate-500">
+        No trade history recorded.
       </div>
     </section>
   );
