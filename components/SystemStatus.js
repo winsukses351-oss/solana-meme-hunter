@@ -7,37 +7,33 @@ export default function SystemStatus({
   dbStatus = "CHECKING",
   solanaRpcData = null,
   marketDataHealth = null,
+  hunterData = null,
 }) {
   const [logs, setLogs] = useState([]);
 
   const rpcStatus = solanaRpcData?.status || "CHECKING";
   const marketStatus = marketDataHealth?.status || "CHECKING";
+  const hunterStatus = hunterData?.status || "CHECKING";
   const birdeyeStatus = marketDataHealth?.birdeyeStatus || "NOT_CONFIGURED";
   const dexscreenerStatus = marketDataHealth?.dexScreenerStatus || "CHECKING";
 
   useEffect(() => {
     const now = new Date().toISOString().split("T")[1].slice(0, 8);
 
-    let rpcLogMsg = `SOLANA RPC: Not configured`;
-    if (rpcStatus === "CONNECTED") {
-      rpcLogMsg = `SOLANA RPC: Connected (Slot: ${solanaRpcData?.slot || "N/A"})`;
-    } else if (rpcStatus === "ERROR") {
-      rpcLogMsg = `SOLANA RPC: Health check failed`;
-    }
-
-    let mktLogMsg = `MARKET DATA: Not configured`;
-    if (marketStatus === "CONNECTED") {
-      mktLogMsg = `MARKET DATA: Connected via ${marketDataHealth?.activeProvider || "provider"}`;
-    } else if (marketStatus === "ERROR") {
-      mktLogMsg = `MARKET DATA: Provider unavailable`;
+    let hunterLogMsg = `TOKEN HUNTER: Not configured`;
+    if (hunterStatus === "CONNECTED") {
+      hunterLogMsg = `TOKEN HUNTER: Active (${hunterData?.candidateCount ?? 0} Candidates Found)`;
+    } else if (hunterStatus === "ERROR") {
+      hunterLogMsg = `TOKEN HUNTER: Engine offline`;
     }
 
     const initialLogs = [
-      `[${now}] INFO: Terminal Phase 1–4 active`,
+      `[${now}] INFO: Terminal Phase 1–5 active`,
       `[${now}] BACKEND: API status -> ${backendStatus}`,
       `[${now}] DATABASE: Connection status -> ${dbStatus}`,
-      `[${now}] ${rpcLogMsg}`,
-      `[${now}] ${mktLogMsg}`,
+      `[${now}] SOLANA RPC: ${rpcStatus}`,
+      `[${now}] MARKET DATA: ${marketStatus} via ${marketDataHealth?.activeProvider || "none"}`,
+      `[${now}] ${hunterLogMsg}`,
     ];
     setLogs(initialLogs);
   }, [
@@ -45,7 +41,8 @@ export default function SystemStatus({
     dbStatus,
     rpcStatus,
     marketStatus,
-    solanaRpcData?.slot,
+    hunterStatus,
+    hunterData?.candidateCount,
     marketDataHealth?.activeProvider,
   ]);
 
@@ -70,6 +67,13 @@ export default function SystemStatus({
     return "CHECKING...";
   };
 
+  const getHunterDisplayStatus = () => {
+    if (hunterStatus === "CONNECTED") return "CONNECTED";
+    if (hunterStatus === "NOT_CONFIGURED") return "NOT CONFIGURED";
+    if (hunterStatus === "ERROR") return "ERROR";
+    return "CHECKING...";
+  };
+
   const getProviderDisplay = (statusStr) => {
     if (statusStr === "CONNECTED") return "CONNECTED";
     if (statusStr === "NOT_CONFIGURED") return "NOT CONFIGURED";
@@ -81,6 +85,7 @@ export default function SystemStatus({
     { label: "DATABASE", status: getDbDisplayStatus() },
     { label: "SOLANA RPC", status: getRpcDisplayStatus() },
     { label: "MARKET DATA", status: getMarketDisplayStatus() },
+    { label: "TOKEN HUNTER ENGINE", status: getHunterDisplayStatus() },
     { label: "WALLET / SIGNER", status: "NOT CONNECTED" },
     { label: "EXECUTION PROVIDER", status: "NOT CONNECTED" },
     { label: "SAFETY ENGINE", status: "NOT CONNECTED" },
@@ -96,7 +101,7 @@ export default function SystemStatus({
   const apiHealth = [
     { provider: "Birdeye", status: getProviderDisplay(birdeyeStatus) },
     { provider: "DexScreener", status: getProviderDisplay(dexscreenerStatus) },
-    { provider: "Jupiter", status: "NOT CONNECTED" },
+    { provider: "Token Hunter Engine", status: getHunterDisplayStatus() },
     { provider: "Solana RPC", status: getRpcDisplayStatus() },
     { provider: "PostgreSQL", status: getDbDisplayStatus() },
     { provider: "Backend API", status: backendStatus === "connected" ? "CONNECTED" : "ERROR" },
@@ -117,10 +122,10 @@ export default function SystemStatus({
               </span>
             </div>
             <div className="text-sm font-mono font-bold text-slate-200 mt-1">
-              Reason: Real market data integration complete. Live trading remains disabled in Phase 4.
+              Reason: Token Hunter candidate discovery active. Live trading remains disabled in Phase 5.
             </div>
             <p className="text-xs font-mono text-slate-400 mt-1">
-              Current state: BLOCKED — Read-Only Market Data
+              Current state: BLOCKED — Read-Only Candidate Discovery & Ranking
             </p>
           </div>
         </section>
