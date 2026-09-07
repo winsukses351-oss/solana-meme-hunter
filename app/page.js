@@ -18,7 +18,7 @@ export default function Dashboard() {
   const [dbStatus, setDbStatus] = useState("CHECKING");
   const [solanaRpcData, setSolanaRpcData] = useState(null);
   const [marketDataHealth, setMarketDataHealth] = useState(null);
-  const [tokensData, setTokensData] = useState([]);
+  const [hunterData, setHunterData] = useState(null);
 
   useEffect(() => {
     async function fetchHealth() {
@@ -56,27 +56,27 @@ export default function Dashboard() {
       }
     }
 
-    async function fetchTokens() {
+    async function fetchTokenHunter() {
       try {
-        const res = await fetch("/api/market-data/tokens");
+        const res = await fetch("/api/token-hunter");
         if (res.ok) {
           const data = await res.json();
-          setTokensData(data.tokens || []);
+          setHunterData(data);
         }
       } catch {
-        setTokensData([]);
+        setHunterData(null);
       }
     }
 
     fetchHealth();
     fetchSolanaHealth();
-    fetchTokens();
+    fetchTokenHunter();
 
     const interval = setInterval(() => {
       fetchHealth();
       fetchSolanaHealth();
-      fetchTokens();
-    }, 15000); // 15-second safe interval for rate limits
+      fetchTokenHunter();
+    }, 15000); // Safe 15s refresh interval
 
     return () => clearInterval(interval);
   }, []);
@@ -89,16 +89,15 @@ export default function Dashboard() {
       {/* Main Terminal Body */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-2.5 sm:p-4 space-y-4">
         
-        {/* Render berdasarkan Tab Navigasi */}
         {activeTab === "dashboard" && (
           <>
             <AccountMetrics />
             <LiveScanner
-              tokensData={tokensData}
+              hunterData={hunterData}
               marketDataStatus={marketDataHealth?.status || "CHECKING"}
             />
             <TopOpportunitiesTable
-              tokensData={tokensData}
+              hunterData={hunterData}
               marketDataStatus={marketDataHealth?.status || "CHECKING"}
             />
             <SmartMoneyWhales />
@@ -109,6 +108,7 @@ export default function Dashboard() {
               dbStatus={dbStatus}
               solanaRpcData={solanaRpcData}
               marketDataHealth={marketDataHealth}
+              hunterData={hunterData}
             />
           </>
         )}
@@ -116,11 +116,11 @@ export default function Dashboard() {
         {activeTab === "scanner" && (
           <div className="space-y-4">
             <LiveScanner
-              tokensData={tokensData}
+              hunterData={hunterData}
               marketDataStatus={marketDataHealth?.status || "CHECKING"}
             />
             <TopOpportunitiesTable
-              tokensData={tokensData}
+              hunterData={hunterData}
               marketDataStatus={marketDataHealth?.status || "CHECKING"}
             />
           </div>
@@ -146,6 +146,7 @@ export default function Dashboard() {
               dbStatus={dbStatus}
               solanaRpcData={solanaRpcData}
               marketDataHealth={marketDataHealth}
+              hunterData={hunterData}
             />
           </div>
         )}
@@ -157,6 +158,7 @@ export default function Dashboard() {
               dbStatus={dbStatus}
               solanaRpcData={solanaRpcData}
               marketDataHealth={marketDataHealth}
+              hunterData={hunterData}
             />
           </div>
         )}
@@ -164,7 +166,7 @@ export default function Dashboard() {
 
       {/* Terminal Footer */}
       <footer className="border-t border-slate-800/80 py-3 text-center text-[11px] font-mono text-slate-500 bg-[#0b0e14]">
-        SOLANA AI TRADER — Phase 4 Real Market Data Integration | System State: BLOCKED
+        SOLANA AI TRADER — Phase 5 Real Token Hunter Engine | System State: BLOCKED
       </footer>
     </div>
   );
