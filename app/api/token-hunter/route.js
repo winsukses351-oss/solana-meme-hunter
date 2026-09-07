@@ -17,6 +17,8 @@ export async function GET() {
         candidateCount: 0,
         candidates: [],
         filtered: [],
+        rejectionBreakdown: {},
+        diagnosticsStats: {},
         error: error.message,
         timestamp: new Date().toISOString(),
       },
