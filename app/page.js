@@ -17,6 +17,8 @@ export default function Dashboard() {
   const [backendStatus, setBackendStatus] = useState("CHECKING");
   const [dbStatus, setDbStatus] = useState("CHECKING");
   const [solanaRpcData, setSolanaRpcData] = useState(null);
+  const [marketDataHealth, setMarketDataHealth] = useState(null);
+  const [tokensData, setTokensData] = useState([]);
 
   useEffect(() => {
     async function fetchHealth() {
@@ -26,6 +28,7 @@ export default function Dashboard() {
           const data = await res.json();
           setBackendStatus(data.backend || "error");
           setDbStatus(data.database || "error");
+          setMarketDataHealth(data.market_data || null);
         } else {
           setBackendStatus("error");
           setDbStatus("error");
@@ -53,13 +56,27 @@ export default function Dashboard() {
       }
     }
 
+    async function fetchTokens() {
+      try {
+        const res = await fetch("/api/market-data/tokens");
+        if (res.ok) {
+          const data = await res.json();
+          setTokensData(data.tokens || []);
+        }
+      } catch {
+        setTokensData([]);
+      }
+    }
+
     fetchHealth();
     fetchSolanaHealth();
+    fetchTokens();
 
     const interval = setInterval(() => {
       fetchHealth();
       fetchSolanaHealth();
-    }, 12000); // 12-second safe interval to preserve RPC quota
+      fetchTokens();
+    }, 15000); // 15-second safe interval for rate limits
 
     return () => clearInterval(interval);
   }, []);
@@ -76,8 +93,14 @@ export default function Dashboard() {
         {activeTab === "dashboard" && (
           <>
             <AccountMetrics />
-            <LiveScanner />
-            <TopOpportunitiesTable />
+            <LiveScanner
+              tokensData={tokensData}
+              marketDataStatus={marketDataHealth?.status || "CHECKING"}
+            />
+            <TopOpportunitiesTable
+              tokensData={tokensData}
+              marketDataStatus={marketDataHealth?.status || "CHECKING"}
+            />
             <SmartMoneyWhales />
             <OpenPositionsTable />
             <TradeHistoryTable />
@@ -85,14 +108,21 @@ export default function Dashboard() {
               backendStatus={backendStatus}
               dbStatus={dbStatus}
               solanaRpcData={solanaRpcData}
+              marketDataHealth={marketDataHealth}
             />
           </>
         )}
 
         {activeTab === "scanner" && (
           <div className="space-y-4">
-            <LiveScanner />
-            <TopOpportunitiesTable />
+            <LiveScanner
+              tokensData={tokensData}
+              marketDataStatus={marketDataHealth?.status || "CHECKING"}
+            />
+            <TopOpportunitiesTable
+              tokensData={tokensData}
+              marketDataStatus={marketDataHealth?.status || "CHECKING"}
+            />
           </div>
         )}
 
@@ -115,6 +145,7 @@ export default function Dashboard() {
               backendStatus={backendStatus}
               dbStatus={dbStatus}
               solanaRpcData={solanaRpcData}
+              marketDataHealth={marketDataHealth}
             />
           </div>
         )}
@@ -125,6 +156,7 @@ export default function Dashboard() {
               backendStatus={backendStatus}
               dbStatus={dbStatus}
               solanaRpcData={solanaRpcData}
+              marketDataHealth={marketDataHealth}
             />
           </div>
         )}
@@ -132,7 +164,7 @@ export default function Dashboard() {
 
       {/* Terminal Footer */}
       <footer className="border-t border-slate-800/80 py-3 text-center text-[11px] font-mono text-slate-500 bg-[#0b0e14]">
-        SOLANA AI TRADER — Phase 3 Mainnet RPC Integration | System State: BLOCKED
+        SOLANA AI TRADER — Phase 4 Real Market Data Integration | System State: BLOCKED
       </footer>
     </div>
   );
