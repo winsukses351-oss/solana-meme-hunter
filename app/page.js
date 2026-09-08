@@ -1,16 +1,16 @@
 /**
- * Solana AI Trader Dashboard — Full Foundation UI Restored + Phase 5.6 Backend Engine
+ * Solana AI Trader Dashboard — Full Foundation UI Restored + Phase 6 Scoring Engine
  */
 
 import { checkDatabaseHealth } from "@/lib/db";
 import { checkSolanaRpcHealth } from "@/lib/solana/rpc";
 import { getMarketDataHealth } from "@/lib/market-data/service";
 import { runTokenHunterPipeline } from "@/lib/token-hunter/service";
+import { scoreCandidateToken } from "@/lib/scoring/engine";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  // Fetch Phase 5.6 Real Backend Data
   const [dbHealth, rpcHealth, marketHealth, hunterData] = await Promise.all([
     checkDatabaseHealth().catch(() => ({ status: "NOT CONFIGURED" })),
     checkSolanaRpcHealth().catch(() => ({ status: "ERROR" })),
@@ -25,19 +25,20 @@ export default async function DashboardPage() {
     })),
   ]);
 
-  const isBackendConnected = true;
+  const rawCandidates = hunterData?.candidates || [];
+  // Run Phase 6 Deterministic Token Scoring Engine
+  const scoredCandidates = rawCandidates.map((item) => scoreCandidateToken(item));
   const sampleRejections = (hunterData?.filtered || []).slice(0, 5);
-  const candidatesList = hunterData?.candidates || [];
   const diag = hunterData?.diagnosticsStats || {};
 
   return (
     <div style={{ padding: "20px", fontFamily: "monospace", backgroundColor: "#0d1117", color: "#c9d1d9", minHeight: "100vh" }}>
       
-      {/* 1. HEADER & TRADING STATUS */}
+      {/* 1. HEADER & TRADING SAFETY STATUS */}
       <header style={{ borderBottom: "1px solid #30363d", paddingBottom: "16px", marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h1 style={{ color: "#58a6ff", margin: "0 0 4px 0", fontSize: "22px" }}>SOLANA AI TRADER — SYSTEM DASHBOARD</h1>
-          <span style={{ color: "#8b949e", fontSize: "12px" }}>Foundation UI Fully Restored | Phase 5.6 Active</span>
+          <span style={{ color: "#8b949e", fontSize: "12px" }}>Full Foundation UI | Phase 6 Real Scoring Engine Active</span>
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
           <span style={{ padding: "6px 12px", borderRadius: "4px", backgroundColor: "#da3633", color: "#fff", fontWeight: "bold", fontSize: "12px" }}>
@@ -77,7 +78,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* 4. EMERGENCY CONTROLS & TRADING STATUS EXPLANATION */}
+      {/* 4. EMERGENCY CONTROLS & TRADING SAFETY */}
       <section style={{ marginBottom: "24px", padding: "16px", border: "1px solid #da3633", borderRadius: "6px", backgroundColor: "#161b22", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
         <div>
           <h3 style={{ margin: "0 0 4px 0", color: "#f85149", fontSize: "14px" }}>EMERGENCY CONTROLS & SAFETY LOCK</h3>
@@ -109,9 +110,9 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* 6. TOP OPPORTUNITIES & REJECTIONS */}
+      {/* 6. TOP OPPORTUNITIES & DETERMINISTIC SCORING RESULTS */}
       <section style={{ marginBottom: "24px", padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
-        <h2 style={{ fontSize: "14px", color: "#3fb950", marginTop: 0, marginBottom: "12px" }}>TOP OPPORTUNITIES (VALID CANDIDATES)</h2>
+        <h2 style={{ fontSize: "14px", color: "#3fb950", marginTop: 0, marginBottom: "12px" }}>TOP OPPORTUNITIES (DETERMINISTIC SCORED CANDIDATES)</h2>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", marginBottom: "16px" }}>
             <thead>
@@ -122,14 +123,15 @@ export default async function DashboardPage() {
                 <th style={{ padding: "6px" }}>LIQUIDITY</th>
                 <th style={{ padding: "6px" }}>24H VOLUME</th>
                 <th style={{ padding: "6px" }}>DEX</th>
-                <th style={{ padding: "6px" }}>STATUS</th>
+                <th style={{ padding: "6px" }}>SCORE</th>
+                <th style={{ padding: "6px" }}>RISK QUALITY</th>
               </tr>
             </thead>
             <tbody>
-              {candidatesList.length === 0 ? (
-                <tr><td colSpan="7" style={{ padding: "12px", textAlign: "center", color: "#8b949e" }}>No valid candidates found</td></tr>
+              {scoredCandidates.length === 0 ? (
+                <tr><td colSpan="8" style={{ padding: "12px", textAlign: "center", color: "#8b949e" }}>No scored candidates available</td></tr>
               ) : (
-                candidatesList.map((item, idx) => (
+                scoredCandidates.map((item, idx) => (
                   <tr key={idx} style={{ borderBottom: "1px solid #21262d" }}>
                     <td style={{ padding: "6px", fontWeight: "bold", color: "#58a6ff" }}>{item?.symbol || "UNKNOWN"}</td>
                     <td style={{ padding: "6px", color: "#8b949e" }}>{item?.tokenAddress ? `${item.tokenAddress.slice(0, 6)}...` : "--"}</td>
@@ -137,7 +139,10 @@ export default async function DashboardPage() {
                     <td style={{ padding: "6px" }}>${item?.liquidityUsd?.toLocaleString() || "0"}</td>
                     <td style={{ padding: "6px" }}>${item?.volume24hUsd?.toLocaleString() || "0"}</td>
                     <td style={{ padding: "6px" }}>{item?.dex || "--"}</td>
-                    <td style={{ padding: "6px", color: "#3fb950", fontWeight: "bold" }}>{item?.status || "DISCOVERED"}</td>
+                    <td style={{ padding: "6px", fontWeight: "bold", color: "#e3b341" }}>{item?.score !== null ? `${item.score}/100` : "N/A"}</td>
+                    <td style={{ padding: "6px", fontWeight: "bold", color: item?.riskLevel === "HIGH QUALITY" ? "#3fb950" : item?.riskLevel === "MEDIUM QUALITY" ? "#e3b341" : "#f85149" }}>
+                      {item?.riskLevel}
+                    </td>
                   </tr>
                 ))
               )}
@@ -166,7 +171,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* 7. SMART MONEY & WHALE ACTIVITY (SIDE-BY-SIDE) */}
+      {/* 7. SMART MONEY & WHALE ACTIVITY */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px", marginBottom: "24px" }}>
         <section style={{ padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
           <h2 style={{ fontSize: "14px", color: "#58a6ff", marginTop: 0 }}>SMART MONEY FEED</h2>
@@ -198,7 +203,7 @@ export default async function DashboardPage() {
         </section>
       </div>
 
-      {/* 9. DETAILED SYSTEM HEALTH (12 SUBSYSTEMS) */}
+      {/* 9. DETAILED SYSTEM HEALTH */}
       <section style={{ marginBottom: "24px" }}>
         <h2 style={{ fontSize: "14px", color: "#8b949e", marginBottom: "10px" }}>DETAILED SYSTEM HEALTH</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "10px" }}>
@@ -226,7 +231,7 @@ export default async function DashboardPage() {
           <HealthCard title="Jupiter" status="NOT CONFIGURED" />
           <HealthCard title="Solana RPC" status={rpcHealth?.status || "ERROR"} />
           <HealthCard title="PostgreSQL" status={dbHealth?.status || "NOT CONFIGURED"} />
-          <HealthCard title="Backend API" status={isBackendConnected ? "CONNECTED" : "ERROR"} />
+          <HealthCard title="Backend API" status="CONNECTED" />
         </div>
       </section>
 
@@ -235,15 +240,15 @@ export default async function DashboardPage() {
         <section style={{ padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
           <h2 style={{ fontSize: "14px", color: "#c9d1d9", marginTop: 0 }}>SYSTEM LOGS</h2>
           <div style={{ backgroundColor: "#0d1117", padding: "10px", borderRadius: "4px", fontSize: "11px", color: "#8b949e", fontFamily: "monospace", maxHeight: "120px", overflowY: "auto" }}>
-            <div>[{new Date().toISOString()}] [INFO] System Dashboard loaded. UI restored.</div>
-            <div>[{new Date().toISOString()}] [INFO] Phase 5.6 Market Data: {marketHealth?.status}</div>
+            <div>[{new Date().toISOString()}] [INFO] System Dashboard loaded with Phase 6 Scoring Engine.</div>
+            <div>[{new Date().toISOString()}] [INFO] Candidates Scored: {scoredCandidates.length}</div>
             <div>[{new Date().toISOString()}] [INFO] Solana RPC Slot: {rpcHealth?.currentSlot || "N/A"}</div>
           </div>
         </section>
 
         <section style={{ padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
           <h2 style={{ fontSize: "14px", color: "#c9d1d9", marginTop: 0 }}>SETTINGS OVERVIEW</h2>
-          <p style={{ fontSize: "12px", color: "#8b949e", margin: "0 0 8px 0" }}>Mode: Read-Only Diagnostics</p>
+          <p style={{ fontSize: "12px", color: "#8b949e", margin: "0 0 8px 0" }}>Mode: Read-Only Scoring Engine</p>
           <p style={{ fontSize: "12px", color: "#8b949e", margin: 0 }}>Auto-Trade Engine: Disabled</p>
         </section>
       </div>
