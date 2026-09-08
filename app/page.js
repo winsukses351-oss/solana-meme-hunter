@@ -1,5 +1,5 @@
 /**
- * Main Solana AI Trader Dashboard — Phase 5.4 Hard Asset Filtering & System Diagnostics
+ * Main Solana AI Trader Dashboard — Phase 5.5 Real Meme Token Discovery Quality
  */
 
 import { checkDatabaseHealth } from "@/lib/db";
@@ -16,8 +16,8 @@ export default async function DashboardPage() {
   const hunterData = await runTokenHunterPipeline();
 
   const isBackendConnected = true;
-  const volumeStats = hunterData.volumeStats || {};
-  const sampleRejections = (hunterData.filtered || []).slice(0, 6);
+  const sampleRejections = (hunterData.filtered || []).slice(0, 5);
+  const candidatesList = hunterData.candidates || [];
   const diag = hunterData.diagnosticsStats || {};
 
   return (
@@ -28,7 +28,7 @@ export default async function DashboardPage() {
           <span style={{ padding: "4px 8px", borderRadius: "4px", backgroundColor: "#da3633", color: "#fff", fontWeight: "bold" }}>
             TRADING: BLOCKED
           </span>
-          <span style={{ color: "#8b949e" }}>Phase 5.4 Hard Asset Filter + RPC Recovery</span>
+          <span style={{ color: "#8b949e" }}>Phase 5.5 Real Meme Token Discovery Quality</span>
         </div>
       </header>
 
@@ -45,27 +45,64 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* HARD ASSET FILTER DIAGNOSTICS */}
+      {/* DISCOVERY & HARD FILTER DIAGNOSTICS */}
       <section style={{ marginBottom: "24px", padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
-        <h2 style={{ fontSize: "15px", color: "#58a6ff", marginTop: 0 }}>HARD ASSET EXCLUSIONS & DIAGNOSTICS</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px" }}>
-          <div><small style={{ color: "#8b949e" }}>Excluded Native SOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedNativeSol || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Excluded WSOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedWsol || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Excluded Stablecoins</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedStablecoins || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Excluded Quote Assets</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedQuoteAssets || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Missing Token Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.missingTokenAddress || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Invalid Token Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.invalidTokenAddress || 0}</p></div>
+        <h2 style={{ fontSize: "15px", color: "#58a6ff", marginTop: 0 }}>REAL SOLANA SPL DISCOVERY DIAGNOSTICS</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "12px" }}>
+          <div><small style={{ color: "#8b949e" }}>Raw Pairs</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{hunterData.rawPairsCount || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Solana Pairs</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{hunterData.solanaPairsCount || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Unique Base Tokens</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{hunterData.uniqueTokensCount || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Actual SPL Tokens</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#3fb950", fontWeight: "bold" }}>{hunterData.actualSplDiscovered || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Native SOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedNativeSol || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>WSOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedWsol || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Stablecoins</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedStablecoins || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Quote Assets</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedQuoteAssets || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Missing Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.missingTokenAddress || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Invalid Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.invalidTokenAddress || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Low Liquidity</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.lowLiquidity || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Low Volume</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.lowVolume || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Valid Candidates</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#3fb950", fontWeight: "bold" }}>{hunterData.candidateCount || 0}</p></div>
         </div>
       </section>
 
-      {/* TOKEN HUNTER OVERVIEW */}
+      {/* DISCOVERED CANDIDATES TABLE */}
       <section style={{ marginBottom: "24px", padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
-        <h2 style={{ fontSize: "15px", color: "#3fb950", marginTop: 0 }}>TOKEN HUNTER CANDIDATES ({hunterData.candidateCount})</h2>
-        <div style={{ padding: "8px 12px", backgroundColor: "#21262d", borderRadius: "4px", fontSize: "12px", color: "#e6edf3", marginBottom: "16px" }}>
-          <strong>Diagnostics:</strong> {hunterData.diagnosticSummaryMessage}
-        </div>
+        <h2 style={{ fontSize: "15px", color: "#3fb950", marginTop: 0 }}>VALID CANDIDATES DISCOVERED ({candidatesList.length})</h2>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", marginBottom: "16px" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #30363d", textAlign: "left", color: "#8b949e" }}>
+              <th style={{ padding: "6px" }}>TOKEN</th>
+              <th style={{ padding: "6px" }}>ADDRESS</th>
+              <th style={{ padding: "6px" }}>PRICE</th>
+              <th style={{ padding: "6px" }}>LIQUIDITY</th>
+              <th style={{ padding: "6px" }}>24H VOLUME</th>
+              <th style={{ padding: "6px" }}>DEX</th>
+              <th style={{ padding: "6px" }}>PAIR</th>
+              <th style={{ padding: "6px" }}>STATUS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {candidatesList.length === 0 ? (
+              <tr><td colSpan="8" style={{ padding: "12px", textAlign: "center", color: "#8b949e" }}>No candidates met threshold criteria ($2.5k Liquidity / $1k Volume)</td></tr>
+            ) : (
+              candidatesList.map((item, idx) => (
+                <tr key={idx} style={{ borderBottom: "1px solid #21262d" }}>
+                  <td style={{ padding: "6px", fontWeight: "bold", color: "#58a6ff" }}>{item.symbol}</td>
+                  <td style={{ padding: "6px", color: "#8b949e" }}>{item.tokenAddress ? `${item.tokenAddress.slice(0, 6)}...${item.tokenAddress.slice(-4)}` : "--"}</td>
+                  <td style={{ padding: "6px" }}>{item.price ? `$${item.price}` : "--"}</td>
+                  <td style={{ padding: "6px" }}>${item.liquidityUsd?.toLocaleString()}</td>
+                  <td style={{ padding: "6px" }}>${item.volume24hUsd?.toLocaleString()}</td>
+                  <td style={{ padding: "6px" }}>{item.dex}</td>
+                  <td style={{ padding: "6px", color: "#8b949e" }}>{item.pairAddress ? `${item.pairAddress.slice(0, 4)}...` : "--"}</td>
+                  <td style={{ padding: "6px", color: "#3fb950", fontWeight: "bold" }}>{item.status}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
 
-        <h3 style={{ fontSize: "13px", color: "#8b949e", marginBottom: "8px" }}>SAMPLE REJECTION DIAGNOSTICS (REAL DEXSCREENER DATA)</h3>
+        {/* SAMPLE REJECTIONS TABLE */}
+        <h3 style={{ fontSize: "13px", color: "#8b949e", marginBottom: "8px" }}>SAMPLE DISCOVERY REJECTIONS (REAL DEXSCREENER DATA)</h3>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #30363d", textAlign: "left", color: "#8b949e" }}>
@@ -73,8 +110,8 @@ export default async function DashboardPage() {
               <th style={{ padding: "6px" }}>ADDRESS</th>
               <th style={{ padding: "6px" }}>PRICE</th>
               <th style={{ padding: "6px" }}>LIQUIDITY</th>
-              <th style={{ padding: "6px" }}>VOLUME 24H</th>
-              <th style={{ padding: "6px" }}>DEX / PAIR</th>
+              <th style={{ padding: "6px" }}>24H VOLUME</th>
+              <th style={{ padding: "6px" }}>DEX</th>
               <th style={{ padding: "6px" }}>REJECTION REASON</th>
             </tr>
           </thead>
@@ -85,8 +122,8 @@ export default async function DashboardPage() {
                 <td style={{ padding: "6px", color: "#8b949e" }}>{item.tokenAddress ? `${item.tokenAddress.slice(0, 4)}...${item.tokenAddress.slice(-4)}` : "--"}</td>
                 <td style={{ padding: "6px" }}>{item.price ? `$${item.price}` : "--"}</td>
                 <td style={{ padding: "6px" }}>{item.liquidityUsd ? `$${item.liquidityUsd.toLocaleString()}` : "$0"}</td>
-                <td style={{ padding: "6px" }}>{item.volume24hUsd ? `$${item.volume24hUsd.toFixed(2)}` : "$0.00"}</td>
-                <td style={{ padding: "6px", color: "#8b949e" }}>{item.dex} / {item.pairAddress ? `${item.pairAddress.slice(0, 4)}...` : "--"}</td>
+                <td style={{ padding: "6px" }}>{item.volume24hUsd ? `$${item.volume24hUsd.toLocaleString()}` : "$0"}</td>
+                <td style={{ padding: "6px" }}>{item.dex}</td>
                 <td style={{ padding: "6px", color: "#f85149", fontWeight: "bold" }}>{item.primaryReason}</td>
               </tr>
             ))}
