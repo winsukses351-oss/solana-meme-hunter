@@ -1,7 +1,6 @@
 /**
- * Main Solana AI Trader Dashboard — Phase 5.5 Crash-Proof Dashboard
+ * Solana AI Trader Dashboard — Phase 5.6
  */
-
 import { checkDatabaseHealth } from "@/lib/db";
 import { checkSolanaRpcHealth } from "@/lib/solana/rpc";
 import { getMarketDataHealth } from "@/lib/market-data/service";
@@ -10,7 +9,6 @@ import { runTokenHunterPipeline } from "@/lib/token-hunter/service";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  // Safe execution with Promise settlement
   const [dbHealth, rpcHealth, marketHealth, hunterData] = await Promise.all([
     checkDatabaseHealth().catch(() => ({ status: "NOT CONFIGURED" })),
     checkSolanaRpcHealth().catch(() => ({ status: "ERROR" })),
@@ -38,11 +36,11 @@ export default async function DashboardPage() {
           <span style={{ padding: "4px 8px", borderRadius: "4px", backgroundColor: "#da3633", color: "#fff", fontWeight: "bold" }}>
             TRADING: BLOCKED
           </span>
-          <span style={{ color: "#8b949e" }}>Phase 5.5 Crash-Proof Protection</span>
+          <span style={{ color: "#8b949e" }}>Phase 5.6 Health Consistency</span>
         </div>
       </header>
 
-      {/* HEALTH CONSISTENCY MONITOR */}
+      {/* SYSTEM HEALTH MONITOR */}
       <section style={{ marginBottom: "24px" }}>
         <h2 style={{ fontSize: "14px", color: "#8b949e", marginBottom: "12px" }}>SYSTEM HEALTH MONITOR</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "12px" }}>
@@ -55,7 +53,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* DISCOVERY & HARD FILTER DIAGNOSTICS */}
+      {/* DISCOVERY DIAGNOSTICS */}
       <section style={{ marginBottom: "24px", padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
         <h2 style={{ fontSize: "15px", color: "#58a6ff", marginTop: 0 }}>REAL SOLANA SPL DISCOVERY DIAGNOSTICS</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "12px" }}>
