@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build:web": "pnpm --filter web build",
-    "dev:web": "pnpm --filter web dev",
-    "start:web": "pnpm --filter web start",
+    "build": "pnpm --filter web build",
+    "dev": "pnpm --filter web dev",
+    "start": "pnpm --filter web start",
     "lint": "pnpm --filter web lint"
   },
   "devDependencies": {
