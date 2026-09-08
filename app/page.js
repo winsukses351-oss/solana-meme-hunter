@@ -1,5 +1,5 @@
 /**
- * Main Solana AI Trader Dashboard — Phase 5.5 Real Meme Token Discovery Quality
+ * Main Solana AI Trader Dashboard — Phase 5.5 Crash-Proof Dashboard
  */
 
 import { checkDatabaseHealth } from "@/lib/db";
@@ -10,15 +10,25 @@ import { runTokenHunterPipeline } from "@/lib/token-hunter/service";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const dbHealth = await checkDatabaseHealth();
-  const rpcHealth = await checkSolanaRpcHealth();
-  const marketHealth = await getMarketDataHealth();
-  const hunterData = await runTokenHunterPipeline();
+  // Safe execution with Promise settlement
+  const [dbHealth, rpcHealth, marketHealth, hunterData] = await Promise.all([
+    checkDatabaseHealth().catch(() => ({ status: "NOT CONFIGURED" })),
+    checkSolanaRpcHealth().catch(() => ({ status: "ERROR" })),
+    getMarketDataHealth().catch(() => ({ status: "ERROR", dexscreenerStatus: "ERROR" })),
+    runTokenHunterPipeline().catch((err) => ({
+      status: "ERROR",
+      candidateCount: 0,
+      candidates: [],
+      filtered: [],
+      diagnosticSummaryMessage: err.message || "Pipeline Error",
+      diagnosticsStats: {},
+    })),
+  ]);
 
   const isBackendConnected = true;
-  const sampleRejections = (hunterData.filtered || []).slice(0, 5);
-  const candidatesList = hunterData.candidates || [];
-  const diag = hunterData.diagnosticsStats || {};
+  const sampleRejections = (hunterData?.filtered || []).slice(0, 5);
+  const candidatesList = hunterData?.candidates || [];
+  const diag = hunterData?.diagnosticsStats || {};
 
   return (
     <div style={{ padding: "24px", fontFamily: "monospace", backgroundColor: "#0d1117", color: "#c9d1d9", minHeight: "100vh" }}>
@@ -28,7 +38,7 @@ export default async function DashboardPage() {
           <span style={{ padding: "4px 8px", borderRadius: "4px", backgroundColor: "#da3633", color: "#fff", fontWeight: "bold" }}>
             TRADING: BLOCKED
           </span>
-          <span style={{ color: "#8b949e" }}>Phase 5.5 Real Meme Token Discovery Quality</span>
+          <span style={{ color: "#8b949e" }}>Phase 5.5 Crash-Proof Protection</span>
         </div>
       </header>
 
@@ -37,11 +47,11 @@ export default async function DashboardPage() {
         <h2 style={{ fontSize: "14px", color: "#8b949e", marginBottom: "12px" }}>SYSTEM HEALTH MONITOR</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "12px" }}>
           <HealthCard title="Backend API" status={isBackendConnected ? "CONNECTED" : "ERROR"} />
-          <HealthCard title="PostgreSQL" status={dbHealth.status} />
-          <HealthCard title="Solana RPC" status={rpcHealth.status} subtext={rpcHealth.currentSlot ? `Slot: ${rpcHealth.currentSlot}` : null} />
-          <HealthCard title="Market Data" status={marketHealth.status} />
-          <HealthCard title="DexScreener" status={marketHealth.dexscreenerStatus} />
-          <HealthCard title="Token Hunter" status={hunterData.status} />
+          <HealthCard title="PostgreSQL" status={dbHealth?.status || "NOT CONFIGURED"} />
+          <HealthCard title="Solana RPC" status={rpcHealth?.status || "ERROR"} subtext={rpcHealth?.currentSlot ? `Slot: ${rpcHealth.currentSlot}` : null} />
+          <HealthCard title="Market Data" status={marketHealth?.status || "ERROR"} />
+          <HealthCard title="DexScreener" status={marketHealth?.dexscreenerStatus || "ERROR"} />
+          <HealthCard title="Token Hunter" status={hunterData?.status || "ERROR"} />
         </div>
       </section>
 
@@ -49,19 +59,19 @@ export default async function DashboardPage() {
       <section style={{ marginBottom: "24px", padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
         <h2 style={{ fontSize: "15px", color: "#58a6ff", marginTop: 0 }}>REAL SOLANA SPL DISCOVERY DIAGNOSTICS</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "12px" }}>
-          <div><small style={{ color: "#8b949e" }}>Raw Pairs</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{hunterData.rawPairsCount || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Solana Pairs</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{hunterData.solanaPairsCount || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Unique Base Tokens</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{hunterData.uniqueTokensCount || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Actual SPL Tokens</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#3fb950", fontWeight: "bold" }}>{hunterData.actualSplDiscovered || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Native SOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedNativeSol || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>WSOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedWsol || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Stablecoins</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedStablecoins || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Quote Assets</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedQuoteAssets || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Missing Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.missingTokenAddress || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Invalid Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.invalidTokenAddress || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Low Liquidity</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.lowLiquidity || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Low Volume</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.lowVolume || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Valid Candidates</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#3fb950", fontWeight: "bold" }}>{hunterData.candidateCount || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Raw Pairs</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{hunterData?.rawPairsCount || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Solana Pairs</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{hunterData?.solanaPairsCount || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Unique Base Tokens</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{hunterData?.uniqueTokensCount || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Actual SPL Tokens</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#3fb950", fontWeight: "bold" }}>{hunterData?.actualSplDiscovered || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Native SOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag?.excludedNativeSol || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>WSOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag?.excludedWsol || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Stablecoins</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag?.excludedStablecoins || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Quote Assets</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag?.excludedQuoteAssets || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Missing Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag?.missingTokenAddress || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Invalid Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag?.invalidTokenAddress || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Low Liquidity</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag?.lowLiquidity || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Low Volume</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag?.lowVolume || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Valid Candidates</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#3fb950", fontWeight: "bold" }}>{hunterData?.candidateCount || 0}</p></div>
         </div>
       </section>
 
@@ -87,14 +97,14 @@ export default async function DashboardPage() {
             ) : (
               candidatesList.map((item, idx) => (
                 <tr key={idx} style={{ borderBottom: "1px solid #21262d" }}>
-                  <td style={{ padding: "6px", fontWeight: "bold", color: "#58a6ff" }}>{item.symbol}</td>
-                  <td style={{ padding: "6px", color: "#8b949e" }}>{item.tokenAddress ? `${item.tokenAddress.slice(0, 6)}...${item.tokenAddress.slice(-4)}` : "--"}</td>
-                  <td style={{ padding: "6px" }}>{item.price ? `$${item.price}` : "--"}</td>
-                  <td style={{ padding: "6px" }}>${item.liquidityUsd?.toLocaleString()}</td>
-                  <td style={{ padding: "6px" }}>${item.volume24hUsd?.toLocaleString()}</td>
-                  <td style={{ padding: "6px" }}>{item.dex}</td>
-                  <td style={{ padding: "6px", color: "#8b949e" }}>{item.pairAddress ? `${item.pairAddress.slice(0, 4)}...` : "--"}</td>
-                  <td style={{ padding: "6px", color: "#3fb950", fontWeight: "bold" }}>{item.status}</td>
+                  <td style={{ padding: "6px", fontWeight: "bold", color: "#58a6ff" }}>{item?.symbol || "UNKNOWN"}</td>
+                  <td style={{ padding: "6px", color: "#8b949e" }}>{item?.tokenAddress ? `${item.tokenAddress.slice(0, 6)}...${item.tokenAddress.slice(-4)}` : "--"}</td>
+                  <td style={{ padding: "6px" }}>{item?.price ? `$${item.price}` : "--"}</td>
+                  <td style={{ padding: "6px" }}>${item?.liquidityUsd?.toLocaleString() || "0"}</td>
+                  <td style={{ padding: "6px" }}>${item?.volume24hUsd?.toLocaleString() || "0"}</td>
+                  <td style={{ padding: "6px" }}>{item?.dex || "--"}</td>
+                  <td style={{ padding: "6px", color: "#8b949e" }}>{item?.pairAddress ? `${item.pairAddress.slice(0, 4)}...` : "--"}</td>
+                  <td style={{ padding: "6px", color: "#3fb950", fontWeight: "bold" }}>{item?.status || "DISCOVERED"}</td>
                 </tr>
               ))
             )}
@@ -118,13 +128,13 @@ export default async function DashboardPage() {
           <tbody>
             {sampleRejections.map((item, idx) => (
               <tr key={idx} style={{ borderBottom: "1px solid #21262d" }}>
-                <td style={{ padding: "6px", fontWeight: "bold" }}>{item.symbol}</td>
-                <td style={{ padding: "6px", color: "#8b949e" }}>{item.tokenAddress ? `${item.tokenAddress.slice(0, 4)}...${item.tokenAddress.slice(-4)}` : "--"}</td>
-                <td style={{ padding: "6px" }}>{item.price ? `$${item.price}` : "--"}</td>
-                <td style={{ padding: "6px" }}>{item.liquidityUsd ? `$${item.liquidityUsd.toLocaleString()}` : "$0"}</td>
-                <td style={{ padding: "6px" }}>{item.volume24hUsd ? `$${item.volume24hUsd.toLocaleString()}` : "$0"}</td>
-                <td style={{ padding: "6px" }}>{item.dex}</td>
-                <td style={{ padding: "6px", color: "#f85149", fontWeight: "bold" }}>{item.primaryReason}</td>
+                <td style={{ padding: "6px", fontWeight: "bold" }}>{item?.symbol || "UNKNOWN"}</td>
+                <td style={{ padding: "6px", color: "#8b949e" }}>{item?.tokenAddress ? `${item.tokenAddress.slice(0, 4)}...${item.tokenAddress.slice(-4)}` : "--"}</td>
+                <td style={{ padding: "6px" }}>{item?.price ? `$${item.price}` : "--"}</td>
+                <td style={{ padding: "6px" }}>{item?.liquidityUsd ? `$${item.liquidityUsd.toLocaleString()}` : "$0"}</td>
+                <td style={{ padding: "6px" }}>{item?.volume24hUsd ? `$${item.volume24hUsd.toLocaleString()}` : "$0"}</td>
+                <td style={{ padding: "6px" }}>{item?.dex || "--"}</td>
+                <td style={{ padding: "6px", color: "#f85149", fontWeight: "bold" }}>{item?.primaryReason || "REJECTED"}</td>
               </tr>
             ))}
           </tbody>
