@@ -1,0 +1,7 @@
+solana==0.32.0
+solders==0.18.1
+asyncpg==0.29.0
+httpx==0.26.0
+pydantic==2.6.1
+pydantic-settings==2.1.0
+websockets==12.0
