@@ -1,0 +1,15 @@
+{
+  "name": "solana-autonomous-trader",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:web": "pnpm --filter web build",
+    "dev:web": "pnpm --filter web dev",
+    "start:web": "pnpm --filter web start",
+    "lint": "pnpm --filter web lint"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
