@@ -1,5 +1,5 @@
 /**
- * Main Solana AI Trader Dashboard (Phase 5.3 Volume Diagnostics UI)
+ * Main Solana AI Trader Dashboard — Phase 5.4 Hard Asset Filtering & System Diagnostics
  */
 
 import { checkDatabaseHealth } from "@/lib/db";
@@ -15,10 +15,10 @@ export default async function DashboardPage() {
   const marketHealth = await getMarketDataHealth();
   const hunterData = await runTokenHunterPipeline();
 
-  const isBackendConnected = true; // Route evaluated successfully
-
+  const isBackendConnected = true;
   const volumeStats = hunterData.volumeStats || {};
-  const sampleRejections = (hunterData.filtered || []).slice(0, 5);
+  const sampleRejections = (hunterData.filtered || []).slice(0, 6);
+  const diag = hunterData.diagnosticsStats || {};
 
   return (
     <div style={{ padding: "24px", fontFamily: "monospace", backgroundColor: "#0d1117", color: "#c9d1d9", minHeight: "100vh" }}>
@@ -28,50 +28,44 @@ export default async function DashboardPage() {
           <span style={{ padding: "4px 8px", borderRadius: "4px", backgroundColor: "#da3633", color: "#fff", fontWeight: "bold" }}>
             TRADING: BLOCKED
           </span>
-          <span style={{ color: "#8b949e" }}>Phase 5.3 Real Volume Diagnostics</span>
+          <span style={{ color: "#8b949e" }}>Phase 5.4 Hard Asset Filter + RPC Recovery</span>
         </div>
       </header>
 
-      {/* HEALTH CONSISTENCY PANEL */}
+      {/* HEALTH CONSISTENCY MONITOR */}
       <section style={{ marginBottom: "24px" }}>
-        <h2 style={{ fontSize: "16px", color: "#8b949e", marginBottom: "12px" }}>SYSTEM HEALTH MONITOR</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
+        <h2 style={{ fontSize: "14px", color: "#8b949e", marginBottom: "12px" }}>SYSTEM HEALTH MONITOR</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "12px" }}>
           <HealthCard title="Backend API" status={isBackendConnected ? "CONNECTED" : "ERROR"} />
           <HealthCard title="PostgreSQL" status={dbHealth.status} />
-          <HealthCard title="Solana RPC" status={rpcHealth.status} />
+          <HealthCard title="Solana RPC" status={rpcHealth.status} subtext={rpcHealth.currentSlot ? `Slot: ${rpcHealth.currentSlot}` : null} />
           <HealthCard title="Market Data" status={marketHealth.status} />
           <HealthCard title="DexScreener" status={marketHealth.dexscreenerStatus} />
           <HealthCard title="Token Hunter" status={hunterData.status} />
         </div>
       </section>
 
-      {/* HUNTER OVERVIEW PANEL */}
+      {/* HARD ASSET FILTER DIAGNOSTICS */}
       <section style={{ marginBottom: "24px", padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
-        <h2 style={{ fontSize: "16px", color: "#58a6ff", marginTop: 0 }}>TOKEN HUNTER METRICS</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "12px" }}>
-          <div><small style={{ color: "#8b949e" }}>Pairs Discovered</small><p style={{ fontSize: "20px", margin: "4px 0" }}>{hunterData.pairsDiscovered}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Unique Tokens</small><p style={{ fontSize: "20px", margin: "4px 0" }}>{hunterData.uniqueTokens}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Low Volume (&lt;$1k)</small><p style={{ fontSize: "20px", margin: "4px 0", color: "#f85149" }}>{hunterData.rejectionBreakdown?.LOW_VOLUME || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Low Liq (&lt;$2.5k)</small><p style={{ fontSize: "20px", margin: "4px 0", color: "#f85149" }}>{hunterData.rejectionBreakdown?.LOW_LIQUIDITY || 0}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Valid Candidates</small><p style={{ fontSize: "20px", margin: "4px 0", color: "#3fb950" }}>{hunterData.candidateCount}</p></div>
-        </div>
-        <div style={{ marginTop: "12px", padding: "8px 12px", backgroundColor: "#21262d", borderRadius: "4px", fontSize: "13px", color: "#e6edf3" }}>
-          <strong>Diagnostic Note:</strong> {hunterData.diagnosticSummaryMessage}
+        <h2 style={{ fontSize: "15px", color: "#58a6ff", marginTop: 0 }}>HARD ASSET EXCLUSIONS & DIAGNOSTICS</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px" }}>
+          <div><small style={{ color: "#8b949e" }}>Excluded Native SOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedNativeSol || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Excluded WSOL</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedWsol || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Excluded Stablecoins</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedStablecoins || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Excluded Quote Assets</small><p style={{ fontSize: "18px", margin: "4px 0", color: "#f85149" }}>{diag.excludedQuoteAssets || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Missing Token Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.missingTokenAddress || 0}</p></div>
+          <div><small style={{ color: "#8b949e" }}>Invalid Token Addr</small><p style={{ fontSize: "18px", margin: "4px 0" }}>{diag.invalidTokenAddress || 0}</p></div>
         </div>
       </section>
 
-      {/* REAL VOLUME DIAGNOSTICS */}
+      {/* TOKEN HUNTER OVERVIEW */}
       <section style={{ marginBottom: "24px", padding: "16px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
-        <h2 style={{ fontSize: "16px", color: "#d29922", marginTop: 0 }}>VOLUME DIAGNOSTICS (REAL OBSERVED DATA)</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px", marginBottom: "16px" }}>
-          <div><small style={{ color: "#8b949e" }}>Required Min Volume</small><p style={{ margin: "4px 0" }}>${hunterData.currentThresholds?.minVolume24hUsd?.toLocaleString()}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Observed Min Volume</small><p style={{ margin: "4px 0" }}>{volumeStats.observedMinVolume !== null ? `$${volumeStats.observedMinVolume.toFixed(2)}` : "--"}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Observed Max Volume</small><p style={{ margin: "4px 0" }}>{volumeStats.observedMaxVolume !== null ? `$${volumeStats.observedMaxVolume.toFixed(2)}` : "--"}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Observed Median Volume</small><p style={{ margin: "4px 0" }}>{volumeStats.observedMedianVolume !== null ? `$${volumeStats.observedMedianVolume.toFixed(2)}` : "--"}</p></div>
-          <div><small style={{ color: "#8b949e" }}>Observed Avg Volume</small><p style={{ margin: "4px 0" }}>{volumeStats.observedAverageVolume !== null ? `$${volumeStats.observedAverageVolume.toFixed(2)}` : "--"}</p></div>
+        <h2 style={{ fontSize: "15px", color: "#3fb950", marginTop: 0 }}>TOKEN HUNTER CANDIDATES ({hunterData.candidateCount})</h2>
+        <div style={{ padding: "8px 12px", backgroundColor: "#21262d", borderRadius: "4px", fontSize: "12px", color: "#e6edf3", marginBottom: "16px" }}>
+          <strong>Diagnostics:</strong> {hunterData.diagnosticSummaryMessage}
         </div>
 
-        <h3 style={{ fontSize: "14px", color: "#8b949e", marginBottom: "8px" }}>LOW VOLUME REAL SAMPLE REJECTIONS</h3>
+        <h3 style={{ fontSize: "13px", color: "#8b949e", marginBottom: "8px" }}>SAMPLE REJECTION DIAGNOSTICS (REAL DEXSCREENER DATA)</h3>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #30363d", textAlign: "left", color: "#8b949e" }}>
@@ -80,8 +74,8 @@ export default async function DashboardPage() {
               <th style={{ padding: "6px" }}>PRICE</th>
               <th style={{ padding: "6px" }}>LIQUIDITY</th>
               <th style={{ padding: "6px" }}>VOLUME 24H</th>
-              <th style={{ padding: "6px" }}>REQUIRED</th>
-              <th style={{ padding: "6px" }}>REJECTION</th>
+              <th style={{ padding: "6px" }}>DEX / PAIR</th>
+              <th style={{ padding: "6px" }}>REJECTION REASON</th>
             </tr>
           </thead>
           <tbody>
@@ -91,9 +85,9 @@ export default async function DashboardPage() {
                 <td style={{ padding: "6px", color: "#8b949e" }}>{item.tokenAddress ? `${item.tokenAddress.slice(0, 4)}...${item.tokenAddress.slice(-4)}` : "--"}</td>
                 <td style={{ padding: "6px" }}>{item.price ? `$${item.price}` : "--"}</td>
                 <td style={{ padding: "6px" }}>{item.liquidityUsd ? `$${item.liquidityUsd.toLocaleString()}` : "$0"}</td>
-                <td style={{ padding: "6px", color: "#f85149" }}>{item.volume24hUsd ? `$${item.volume24hUsd.toFixed(2)}` : "$0.00"}</td>
-                <td style={{ padding: "6px" }}>${hunterData.currentThresholds?.minVolume24hUsd?.toLocaleString()}</td>
-                <td style={{ padding: "6px", color: "#f85149" }}>{item.primaryReason}</td>
+                <td style={{ padding: "6px" }}>{item.volume24hUsd ? `$${item.volume24hUsd.toFixed(2)}` : "$0.00"}</td>
+                <td style={{ padding: "6px", color: "#8b949e" }}>{item.dex} / {item.pairAddress ? `${item.pairAddress.slice(0, 4)}...` : "--"}</td>
+                <td style={{ padding: "6px", color: "#f85149", fontWeight: "bold" }}>{item.primaryReason}</td>
               </tr>
             ))}
           </tbody>
@@ -103,8 +97,8 @@ export default async function DashboardPage() {
   );
 }
 
-function HealthCard({ title, status }) {
-  let color = "#3fb950"; // Green for CONNECTED
+function HealthCard({ title, status, subtext }) {
+  let color = "#3fb950";
   if (status === "ERROR") color = "#f85149";
   if (status === "NOT CONFIGURED") color = "#d29922";
 
@@ -112,6 +106,7 @@ function HealthCard({ title, status }) {
     <div style={{ padding: "12px", border: "1px solid #30363d", borderRadius: "6px", backgroundColor: "#161b22" }}>
       <small style={{ color: "#8b949e" }}>{title}</small>
       <p style={{ margin: "4px 0 0 0", fontWeight: "bold", color }}>{status}</p>
+      {subtext && <small style={{ color: "#8b949e", fontSize: "10px" }}>{subtext}</small>}
     </div>
   );
 }
