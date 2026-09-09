@@ -1,15 +1,15 @@
 {
-  "name": "solana-autonomous-trader",
+  "name": "solana-meme-hunter-web",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter web build",
-    "dev": "pnpm --filter web dev",
-    "start": "pnpm --filter web start",
-    "lint": "pnpm --filter web lint"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
   },
-  "devDependencies": {
-    "typescript": "^5.3.3"
-  },
-  "packageManager": "pnpm@8.15.0"
+  "dependencies": {
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  }
 }
