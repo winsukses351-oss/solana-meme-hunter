@@ -1,4 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm install --legacy-peer-deps"
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "next build"
 }
