@@ -1,0 +1,104 @@
+
+---
+
+#### Database Migrations
+
+FILE: `database/migrations/001_initial_schema.sql`
+```sql
+-- Initial Schema Definition for Solana Autonomous Trader
+
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(100) UNIQUE NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+    key VARCHAR(100) PRIMARY KEY,
+    value JSONB NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS provider_health (
+    provider_name VARCHAR(50) PRIMARY KEY,
+    status VARCHAR(20) NOT NULL DEFAULT 'DEGRADED',
+    latency_ms INT DEFAULT 0,
+    last_check TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    error_message TEXT
+);
+
+CREATE TABLE IF NOT EXISTS tokens (
+    address VARCHAR(64) PRIMARY KEY,
+    symbol VARCHAR(30) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    decimals INT NOT NULL,
+    total_supply VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS decisions (
+    id SERIAL PRIMARY KEY,
+    token_address VARCHAR(64) REFERENCES tokens(address),
+    decision VARCHAR(20) NOT NULL, -- BUY, IGNORE, SELL
+    opportunity_score NUMERIC(5,2) NOT NULL DEFAULT 0.0,
+    safety_score NUMERIC(5,2) NOT NULL DEFAULT 0.0,
+    reason TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS positions (
+    id SERIAL PRIMARY KEY,
+    token_address VARCHAR(64) REFERENCES tokens(address),
+    amount VARCHAR(64) NOT NULL,
+    entry_price_usd NUMERIC(18, 8) NOT NULL,
+    current_price_usd NUMERIC(18, 8) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'OPEN', -- OPEN, CLOSED, RECONCILING
+    take_profit_price NUMERIC(18, 8),
+    stop_loss_price NUMERIC(18, 8),
+    opened_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    closed_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+    id SERIAL PRIMARY KEY,
+    position_id INT REFERENCES positions(id),
+    order_type VARCHAR(10) NOT NULL, -- BUY, SELL
+    status VARCHAR(20) NOT NULL DEFAULT 'CREATED', -- CREATED, SUBMITTED, CONFIRMED, FAILED
+    tx_signature VARCHAR(128),
+    amount_in VARCHAR(64) NOT NULL,
+    amount_out VARCHAR(64),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS pnl_records (
+    id SERIAL PRIMARY KEY,
+    trade_id INT,
+    gross_pnl_usd NUMERIC(18, 4) NOT NULL,
+    fees_usd NUMERIC(18, 4) NOT NULL,
+    net_pnl_usd NUMERIC(18, 4) NOT NULL,
+    recorded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS system_logs (
+    id SERIAL PRIMARY KEY,
+    level VARCHAR(10) NOT NULL,
+    module VARCHAR(50) NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seed Default Settings
+INSERT INTO settings (key, value) VALUES 
+('trading_enabled', 'false'::jsonb),
+('kill_switch', 'false'::jsonb),
+('risk_parameters', '{"risk_per_trade_pct": 2.0, "max_position_usd": 10.0, "max_open_positions": 3, "daily_loss_limit_usd": 5.0, "stop_loss_pct": 10.0, "take_profit_pct": 25.0}'::jsonb)
+ON CONFLICT (key) DO NOTHING;
+
+-- Seed Provider Health Records
+INSERT INTO provider_health (provider_name, status, latency_ms) VALUES
+('solana_rpc', 'READY', 45),
+('database', 'READY', 2),
+('jupiter', 'READY', 80)
+ON CONFLICT (provider_name) DO NOTHING;
