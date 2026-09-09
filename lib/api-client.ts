@@ -1,4 +1,3 @@
-// Client API dengan Fallback / Data Buatan
 export class ApiClient {
   private static async safeFetch(endpoint: string, fallbackData: any) {
     try {
@@ -18,15 +17,23 @@ export class ApiClient {
     }
   }
 
+  // Method yang dicari oleh komponen Dashboard
+  static async getDashboardMetrics() {
+    return this.safeFetch("/dashboard/metrics", {
+      solBalance: "0.00 SOL",
+      dailyPnl: "$0.00",
+      winRate: "0%",
+      maxDrawdown: "0%",
+      currentPeakRisk: "Low"
+    });
+  }
+
   static async getHealth() {
     return this.safeFetch("/health", { status: "ok", mode: "demo/offline" });
   }
 
   static async getTrades() {
-    return this.safeFetch("/trades", [
-      { id: "1", token: "SOL", type: "BUY", amount: 1.5, price: 180, status: "completed" },
-      { id: "2", token: "BONK", type: "SELL", amount: 500000, price: 0.00002, status: "completed" }
-    ]);
+    return this.safeFetch("/trades", []);
   }
 
   static async getOpportunities() {
@@ -38,6 +45,6 @@ export class ApiClient {
   }
 
   static async getRisk() {
-    return this.safeFetch("/risk", { maxDrawdown: "5%", status: "safe" });
+    return this.safeFetch("/risk", { maxDrawdown: "0%", status: "safe" });
   }
 }
